@@ -790,7 +790,7 @@ await notify_admin(
         data,
         message.from_user
     )
-    await state.clear() b  
+    await state.clear()
 # ===============================
 # PART 3 : PREMIUM EXPERIENCE
 # ===============================
