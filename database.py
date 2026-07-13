@@ -249,6 +249,30 @@ def update_status(
     db.commit()
 
     db.close()
+    # ===============================
+# GET USER LEADS
+# ===============================
+
+def get_user_leads(user_id):
+
+    db = connect()
+
+    cursor = db.cursor()
+
+    cursor.execute(
+        """
+        SELECT * FROM leads
+        WHERE user_id=?
+        ORDER BY id DESC
+        """,
+        (user_id,)
+    )
+
+    data = cursor.fetchall()
+
+    db.close()
+
+    return data
 # ===============================
 # GET USERS
 # ===============================
