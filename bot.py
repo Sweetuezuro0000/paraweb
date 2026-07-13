@@ -742,17 +742,14 @@ Please share your contact number.
     ProjectForm.contact
 )
 async def contact_save(
-    message:Message,
-    state:FSMContext
+    message: Message,
+    state: FSMContext
 ):
-
     await state.update_data(
         contact=message.text
     )
 
-
-    data=await state.get_data()
-
+    data = await state.get_data()
 
     await message.answer(
 f"""
@@ -776,22 +773,23 @@ Requirement:
 Contact:
 {data.get('contact')}
 
-
 ✅ Your request has been received.
 
 Paraweb team will contact you soon 🔥
 """
     )
-save_lead(
-    message.from_user.id,
-    data
-)
-await notify_admin(
+
+    save_lead(
+        message.from_user.id,
+        data
+    )
+
+    await notify_admin(
         data,
         message.from_user
     )
-    await state.clear()
-# ===============================
+
+    await state.clear()# ===============================
 # PART 3 : PREMIUM EXPERIENCE
 # ===============================
 
