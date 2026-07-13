@@ -189,9 +189,6 @@ try:
     )
 except TelegramBadRequest:
     pass
-)
-
-
 
 # ===============================
 # SERVICE SELECT
