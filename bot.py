@@ -5,7 +5,6 @@ from database import *
 from database import get_leads
 from database import connect
 from dotenv import load_dotenv
-
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
@@ -14,7 +13,8 @@ from aiogram.types import (
     InlineKeyboardButton
 )
 from aiogram.filters import CommandStart
-
+from database import get_users
+from database import update_status
 
 # ===============================
 # CONFIG
@@ -1220,13 +1220,17 @@ def admin_keyboard():
                     text="👥 Users Count",
                     callback_data="admin_users"
                 )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="📢 Broadcast",
+                    callback_data="broadcast"
+                )
             ]
 
         ]
     )
-
-
-
 # ===============================
 # ADMIN COMMAND
 # ===============================
@@ -1425,3 +1429,86 @@ async def notify_admin(
         ADMIN_ID,
         text
     )
+# ===============================
+# BROADCAST
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="broadcast"
+)
+async def broadcast_start(
+    call:CallbackQuery,
+    state:FSMContext
+):
+
+    if not is_admin(
+        call.from_user.id
+    ):
+        return
+
+
+    await call.answer()
+
+
+    await state.set_state(
+        "broadcast_message"
+    )
+
+
+    await call.message.answer(
+        """
+📢 Broadcast Mode
+
+Send message for all users:
+"""
+    )
+@dp.message(
+    F.text,
+    "broadcast_message"
+)
+async def send_broadcast(
+    message:Message,
+    state:FSMContext
+):
+
+    if not is_admin(
+        message.from_user.id
+    ):
+        return
+
+
+    users=get_users()
+
+
+    sent=0
+
+
+    for user in users:
+
+        try:
+
+            await bot.send_message(
+                user[0],
+                message.text
+            )
+
+            sent+=1
+
+
+        except:
+            pass
+
+
+
+    await message.answer(
+f"""
+✅ Broadcast Completed
+
+Sent to:
+{sent} users
+"""
+    )
+
+
+    await state.clear()    
