@@ -249,3 +249,22 @@ def update_status(
     db.commit()
 
     db.close()
+# ===============================
+# GET USERS
+# ===============================
+
+def get_users():
+
+    db = connect()
+
+    cursor = db.cursor()
+
+    cursor.execute(
+        "SELECT id FROM users"
+    )
+
+    users = cursor.fetchall()
+
+    db.close()
+
+    return users
