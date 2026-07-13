@@ -16,6 +16,7 @@ from aiogram.filters import CommandStart
 from database import get_users
 from database import update_status
 from database import get_user_leads
+from aiogram.exceptions import TelegramBadRequest
 # ===============================
 # CONFIG
 # ===============================
@@ -179,8 +180,6 @@ I will help you plan your project.
 
 First choose what you want to build:
 """
-
-  from aiogram.exceptions import TelegramBadRequest
 
 try:
     await call.message.edit_text(
