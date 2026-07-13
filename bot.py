@@ -1625,67 +1625,46 @@ Current Stage:
 """
 
     )
-    def status_keyboard(lead_id):
-
+def status_keyboard(lead_id):
     return InlineKeyboardMarkup(
-
         inline_keyboard=[
-
             [
                 InlineKeyboardButton(
                     text="📞 Contacted",
                     callback_data=f"status_contacted_{lead_id}"
                 )
             ],
-
             [
                 InlineKeyboardButton(
                     text="⚙️ Working",
                     callback_data=f"status_working_{lead_id}"
                 )
             ],
-
             [
                 InlineKeyboardButton(
                     text="✅ Done",
                     callback_data=f"status_done_{lead_id}"
                 )
             ]
-
         ]
-
     )
- @dp.callback_query(
-    F.data.startswith("status_")
-)
-async def change_status(
-    call:CallbackQuery
-):
 
-    if not is_admin(
-        call.from_user.id
-    ):
+
+@dp.callback_query(F.data.startswith("status_"))
+async def change_status(call: CallbackQuery):
+    if not is_admin(call.from_user.id):
         return
 
-
     parts = call.data.split("_")
-
-
     status = parts[1].upper()
-
     lead_id = parts[2]
-
-
 
     update_status(
         lead_id,
         status
     )
 
-
-    await call.answer(
-        "Status Updated ✅"
-    )
+    await call.answer("Status Updated ✅")
 
 
     # FIND USER ID
