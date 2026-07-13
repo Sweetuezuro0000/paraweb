@@ -77,7 +77,6 @@ def main_menu():
                     text="🌐 Website",
                     callback_data="service_website"
                 ),
-
                 InlineKeyboardButton(
                     text="📱 App",
                     callback_data="service_app"
@@ -93,22 +92,15 @@ def main_menu():
 
             [
                 InlineKeyboardButton(
-                    text="💡 Idea Generator",
-                    callback_data="idea"
+                    text="📊 My Project",
+                    callback_data="my_project"
                 )
             ]
 
         ]
-        
     )
-[
-    InlineKeyboardButton(
-        text="📊 My Project",
-        callback_data="my_project"
-    )
-],
-    return keyboard
 
+    return keyboard
 
 
 def back_button():
