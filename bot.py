@@ -1324,6 +1324,11 @@ f"""
 # ===============================
 
 
+# ===============================
+# ADMIN LEADS WITH ACTION BUTTONS
+# ===============================
+
+
 @dp.callback_query(
     F.data=="admin_leads"
 )
@@ -1337,7 +1342,7 @@ async def show_leads(
         return
 
 
-    leads=get_leads()
+    leads = get_leads()
 
 
     await call.answer()
@@ -1345,50 +1350,63 @@ async def show_leads(
 
     if not leads:
 
-        await call.message.answer(
-            "No leads found."
+        await call.message.edit_text(
+            "📭 No leads found"
         )
 
         return
 
 
 
-    text="🔥 Latest Leads\n\n"
-
-
     for lead in leads[:10]:
 
 
-        text += f"""
+        text=f"""
+🔥 LEAD #{lead[0]}
 
-🆔 Lead ID:
-{lead[0]}
 
-👤 User:
+👤 User ID:
 {lead[1]}
+
 
 🌐 Service:
 {lead[2]}
 
+
 🏢 Business:
 {lead[3]}
+
+
+⚙️ Features:
+{lead[4]}
+
 
 💰 Budget:
 {lead[5]}
 
+
+📝 Requirement:
+{lead[6]}
+
+
+📞 Contact:
+{lead[7]}
+
+
 📌 Status:
 {lead[8]}
-
-----------------
 """
 
 
-    await call.message.edit_text(
-        text
-    )
+        await call.message.answer(
 
+            text,
 
+            reply_markup=status_keyboard(
+                lead[0]
+            )
 
+        )
 # ===============================
 # NEW LEAD NOTIFICATION
 # ===============================
@@ -1650,7 +1668,7 @@ Current Stage:
         ]
 
     )
-    @dp.callback_query(
+ @dp.callback_query(
     F.data.startswith("status_")
 )
 async def change_status(
@@ -1663,12 +1681,13 @@ async def change_status(
         return
 
 
-    data=call.data.split("_")
+    parts = call.data.split("_")
 
 
-    status=data[1].upper()
+    status = parts[1].upper()
 
-    lead_id=data[2]
+    lead_id = parts[2]
+
 
 
     update_status(
@@ -1682,17 +1701,85 @@ async def change_status(
     )
 
 
-    await call.message.edit_text(
+    # FIND USER ID
+
+    db = connect()
+
+    cursor = db.cursor()
+
+
+    cursor.execute(
+        """
+        SELECT user_id 
+        FROM leads 
+        WHERE id=?
+        """,
+        (lead_id,)
+    )
+
+
+    user = cursor.fetchone()
+
+
+    db.close()
+
+
+
+    if user:
+
+
+        messages={
+
+            "CONTACTED":
+"""
+📞 Paraweb Update
+
+Your project discussion has started.
+
+Our team will contact you soon 🚀
+""",
+
+            "WORKING":
+"""
+⚙️ Paraweb Update
+
+Your project development has started 🔥
+
+We are working on your idea.
+""",
+
+            "DONE":
+"""
+🎉 Paraweb Update
+
+Your project has been completed.
+
+Thank you for choosing Paraweb 🚀
+"""
+
+        }
+
+
+        await bot.send_message(
+            user[0],
+            messages.get(
+                status,
+                "Your project status updated."
+            )
+        )
+
+
+
+    await call.message.answer(
 
 f"""
-🔥 Lead Updated
+✅ Lead Updated
 
 ID:
 {lead_id}
 
-New Status:
+Status:
 {status}
-
 """
 
     )
