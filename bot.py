@@ -1739,6 +1739,7 @@ ID:
 Status:
 {status}
 """
+    )
 async def main():
     init_db()
     print("🚀 Paraweb Bot Started")
