@@ -15,7 +15,7 @@ from aiogram.types import (
 from aiogram.filters import CommandStart
 from database import get_users
 from database import update_status
-
+from database import get_user_leads
 # ===============================
 # CONFIG
 # ===============================
@@ -99,8 +99,14 @@ def main_menu():
             ]
 
         ]
+        
     )
-
+[
+    InlineKeyboardButton(
+        text="📊 My Project",
+        callback_data="my_project"
+    )
+],
     return keyboard
 
 
@@ -1512,3 +1518,181 @@ Sent to:
 
 
     await state.clear()    
+# ===============================
+# CLIENT PROJECT STATUS
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="my_project"
+)
+async def my_project(
+    call:CallbackQuery
+):
+
+    await call.answer()
+
+
+    leads=get_user_leads(
+        call.from_user.id
+    )
+
+
+    if not leads:
+
+        await call.message.edit_text(
+            """
+📂 No project found.
+
+Start your first project with Paraweb 🚀
+"""
+        )
+
+        return
+
+
+
+    lead=leads[0]
+
+
+    status=lead[8]
+
+
+    stages={
+
+        "NEW":
+"""
+🟦 Requirement Received
+⬜ Planning
+⬜ Development
+⬜ Testing
+⬜ Launch
+""",
+
+        "CONTACTED":
+"""
+✅ Requirement Received
+🟦 Discussion Started
+⬜ Development
+⬜ Testing
+⬜ Launch
+""",
+
+        "WORKING":
+"""
+✅ Requirement Received
+✅ Planning
+🟦 Development
+⬜ Testing
+⬜ Launch
+""",
+
+        "DONE":
+"""
+✅ Requirement Received
+✅ Development
+✅ Testing
+🟦 Project Delivered 🚀
+"""
+
+    }
+
+
+
+    await call.message.edit_text(
+
+f"""
+🚀 Paraweb Project Tracker
+
+
+Project:
+{lead[2]}
+
+
+Status:
+
+{stages.get(status, stages["NEW"])}
+
+
+Current Stage:
+{status}
+
+"""
+
+    )
+    def status_keyboard(lead_id):
+
+    return InlineKeyboardMarkup(
+
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="📞 Contacted",
+                    callback_data=f"status_contacted_{lead_id}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⚙️ Working",
+                    callback_data=f"status_working_{lead_id}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="✅ Done",
+                    callback_data=f"status_done_{lead_id}"
+                )
+            ]
+
+        ]
+
+    )
+    @dp.callback_query(
+    F.data.startswith("status_")
+)
+async def change_status(
+    call:CallbackQuery
+):
+
+    if not is_admin(
+        call.from_user.id
+    ):
+        return
+
+
+    data=call.data.split("_")
+
+
+    status=data[1].upper()
+
+    lead_id=data[2]
+
+
+    update_status(
+        lead_id,
+        status
+    )
+
+
+    await call.answer(
+        "Status Updated ✅"
+    )
+
+
+    await call.message.edit_text(
+
+f"""
+🔥 Lead Updated
+
+ID:
+{lead_id}
+
+New Status:
+{status}
+
+"""
+
+    )
