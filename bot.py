@@ -2,7 +2,8 @@ import asyncio
 import os
 import random
 from database import *
-
+from database import get_leads
+from database import connect
 from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
@@ -790,7 +791,10 @@ save_lead(
     message.from_user.id,
     data
 )
-
+await notify_admin(
+        data,
+        message.from_user
+    )
     await state.clear() b  
 # ===============================
 # PART 3 : PREMIUM EXPERIENCE
@@ -1180,4 +1184,244 @@ then expand features 🚀
 """
 
     )
-    
+    # ===============================
+# PART 5 : ADMIN PANEL
+# ===============================
+
+
+# ===============================
+# ADMIN CHECK
+# ===============================
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+def is_admin(user_id):
+
+    return user_id == ADMIN_ID
+
+
+
+# ===============================
+# ADMIN MENU
+# ===============================
+
+def admin_keyboard():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="📩 View Leads",
+                    callback_data="admin_leads"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="👥 Users Count",
+                    callback_data="admin_users"
+                )
+            ]
+
+        ]
+    )
+
+
+
+# ===============================
+# ADMIN COMMAND
+# ===============================
+
+
+@dp.message(
+    F.text=="/admin"
+)
+async def admin_panel(
+    message:Message
+):
+
+    if not is_admin(
+        message.from_user.id
+    ):
+        return
+
+
+    await message.answer(
+
+"""
+👑 Paraweb Admin Panel
+
+Choose option:
+""",
+
+reply_markup=admin_keyboard()
+
+    )
+
+
+
+# ===============================
+# USER COUNT
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="admin_users"
+)
+async def users_count(
+    call:CallbackQuery
+):
+
+    if not is_admin(
+        call.from_user.id
+    ):
+        return
+
+
+    db=connect()
+
+    cursor=db.cursor()
+
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM users"
+    )
+
+
+    count=cursor.fetchone()[0]
+
+
+    db.close()
+
+
+    await call.answer()
+
+
+    await call.message.edit_text(
+
+f"""
+👥 Total Users:
+
+{count}
+
+"""
+
+    )
+
+
+
+# ===============================
+# SHOW LEADS
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="admin_leads"
+)
+async def show_leads(
+    call:CallbackQuery
+):
+
+    if not is_admin(
+        call.from_user.id
+    ):
+        return
+
+
+    leads=get_leads()
+
+
+    await call.answer()
+
+
+    if not leads:
+
+        await call.message.answer(
+            "No leads found."
+        )
+
+        return
+
+
+
+    text="🔥 Latest Leads\n\n"
+
+
+    for lead in leads[:10]:
+
+
+        text += f"""
+
+🆔 Lead ID:
+{lead[0]}
+
+👤 User:
+{lead[1]}
+
+🌐 Service:
+{lead[2]}
+
+🏢 Business:
+{lead[3]}
+
+💰 Budget:
+{lead[5]}
+
+📌 Status:
+{lead[8]}
+
+----------------
+"""
+
+
+    await call.message.edit_text(
+        text
+    )
+
+
+
+# ===============================
+# NEW LEAD NOTIFICATION
+# ===============================
+
+
+async def notify_admin(
+    data,
+    user
+):
+
+
+    text=f"""
+
+🔥 NEW PARAWEB LEAD
+
+
+👤 Name:
+{user.first_name}
+
+
+🌐 Service:
+{data.get('service')}
+
+
+🏢 Business:
+{data.get('business')}
+
+
+💰 Budget:
+{data.get('budget')}
+
+
+📝 Requirement:
+{data.get('requirement')}
+
+
+📞 Contact:
+{data.get('contact')}
+
+"""
+
+
+    await bot.send_message(
+        ADMIN_ID,
+        text
+    )
