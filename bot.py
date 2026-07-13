@@ -180,11 +180,17 @@ I will help you plan your project.
 First choose what you want to build:
 """
 
+  from aiogram.exceptions import TelegramBadRequest
+
+try:
     await call.message.edit_text(
         text,
         reply_markup=main_menu(),
         parse_mode="Markdown"
     )
+except TelegramBadRequest:
+    pass
+)
 
 
 
@@ -344,17 +350,6 @@ to continue your journey 🚀
 # ===============================
 
 
-async def main():
-    init_db()
-    print("🚀 Paraweb Bot Started")
-
-    await dp.start_polling(bot)
-
-
-
-if __name__=="__main__":
-
-    asyncio.run(main())
 
 # ===============================
 # PART 2 : PROJECT ASSISTANT FLOW
@@ -1748,5 +1743,16 @@ ID:
 Status:
 {status}
 """
+async def main():
+    init_db()
+    print("🚀 Paraweb Bot Started")
+
+    await dp.start_polling(bot)
+
+
+
+if __name__=="__main__":
+
+    asyncio.run(main())
 
     )
