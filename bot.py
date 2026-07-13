@@ -1,161 +1,355 @@
-import os
 import asyncio
+import os
+import random
 
 from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
 from aiogram.types import (
     Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
 )
+from aiogram.filters import CommandStart
 
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
+
+# ===============================
+# CONFIG
+# ===============================
 
 load_dotenv()
 
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN missing in .env")
+
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
 
-# ==========================
-# STATES
-# ==========================
+# ===============================
+# BRAND SETTINGS
+# ===============================
 
-class Order(StatesGroup):
-    requirement = State()
-    contact = State()
+BRAND = "Paraweb"
+
+WELCOME_TEXT = """
+🚀 *Welcome to Paraweb*
+
+Where ideas become digital products.
+
+We build:
+
+🌐 Websites
+📱 Mobile Apps
+🤖 Telegram Bots
+
+Ready to transform your idea into reality?
+
+Choose an option below 👇
+"""
 
 
-# ==========================
-# MENU
-# ==========================
-
-menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🌐 Website")],
-        [KeyboardButton(text="📱 App")],
-        [KeyboardButton(text="🤖 Telegram Bot")]
-    ],
-    resize_keyboard=True
-)
+# ===============================
+# KEYBOARDS
+# ===============================
 
 
-# ==========================
-# START
-# ==========================
+def main_menu():
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="🚀 Start Project",
+                    callback_data="start_project"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🌐 Website",
+                    callback_data="service_website"
+                ),
+
+                InlineKeyboardButton(
+                    text="📱 App",
+                    callback_data="service_app"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="🤖 Telegram Bot",
+                    callback_data="service_bot"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="💡 Idea Generator",
+                    callback_data="idea"
+                )
+            ]
+
+        ]
+    )
+
+    return keyboard
+
+
+
+def back_button():
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Back",
+                    callback_data="back"
+                )
+            ]
+
+        ]
+    )
+
+
+
+# ===============================
+# TYPING EFFECT
+# ===============================
+
+
+async def typing(message):
+
+    await bot.send_chat_action(
+        chat_id=message.chat.id,
+        action="typing"
+    )
+
+    await asyncio.sleep(
+        random.uniform(1,2)
+    )
+
+
+
+# ===============================
+# START COMMAND
+# ===============================
+
 
 @dp.message(CommandStart())
 async def start(message: Message):
 
-    text = (
-        "👋 Welcome to *Paraweb*\n\n"
-        "We build:\n"
-        "🌐 Websites\n"
-        "📱 Mobile Apps\n"
-        "🤖 Telegram Bots\n\n"
-        "Please choose a service."
-    )
+    await typing(message)
 
     await message.answer(
-        text,
-        parse_mode="Markdown",
-        reply_markup=menu
+        WELCOME_TEXT,
+        reply_markup=main_menu(),
+        parse_mode="Markdown"
     )
 
 
-# ==========================
-# SERVICE SELECT
-# ==========================
 
-@dp.message(F.text.in_(["🌐 Website", "📱 App", "🤖 Telegram Bot"]))
-async def service(message: Message, state: FSMContext):
-
-    await state.update_data(service=message.text)
-
-    await message.answer(
-        "📝 Please describe your requirements.",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-    await state.set_state(Order.requirement)
+# ===============================
+# START PROJECT
+# ===============================
 
 
-# ==========================
-# REQUIREMENT
-# ==========================
+@dp.callback_query(
+    F.data=="start_project"
+)
+async def project_start(call: CallbackQuery):
 
-@dp.message(Order.requirement)
-async def requirement(message: Message, state: FSMContext):
+    await call.answer()
 
-    await state.update_data(requirement=message.text)
+    await typing(call.message)
 
-    await message.answer(
-        "📞 Please send your contact number or Telegram username."
-    )
+    text = """
+🔥 *Project Assistant Activated*
 
-    await state.set_state(Order.contact)
+I will help you plan your project.
 
-
-# ==========================
-# CONTACT
-# ==========================
-
-@dp.message(Order.contact)
-async def contact(message: Message, state: FSMContext):
-
-    await state.update_data(contact=message.text)
-
-    data = await state.get_data()
-
-    service = data["service"]
-    requirement = data["requirement"]
-    contact = data["contact"]
-
-    admin_text = f"""
-📩 New Order
-
-👤 Name: {message.from_user.full_name}
-🆔 ID: {message.from_user.id}
-📌 Username: @{message.from_user.username}
-
-💼 Service:
-{service}
-
-📝 Requirement:
-{requirement}
-
-📞 Contact:
-{contact}
+First choose what you want to build:
 """
 
-    await bot.send_message(
-        ADMIN_ID,
-        admin_text
+    await call.message.edit_text(
+        text,
+        reply_markup=main_menu(),
+        parse_mode="Markdown"
     )
+
+
+
+# ===============================
+# SERVICE SELECT
+# ===============================
+
+
+@dp.callback_query(
+    F.data.startswith("service_")
+)
+async def service_select(call: CallbackQuery):
+
+    await call.answer()
+
+    service = call.data.replace(
+        "service_",
+        ""
+    )
+
+
+    names = {
+
+        "website":
+        "🌐 Website Development",
+
+        "app":
+        "📱 Mobile App Development",
+
+        "bot":
+        "🤖 Telegram Bot Development"
+
+    }
+
+
+    text=f"""
+✅ Selected:
+
+*{names.get(service)}*
+
+Great choice 🚀
+
+Now we will understand your requirements.
+"""
+
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+
+            [
+                InlineKeyboardButton(
+                    text="📝 Continue",
+                    callback_data=f"continue_{service}"
+                )
+            ],
+
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Back",
+                    callback_data="back"
+                )
+            ]
+
+        ]
+    )
+
+
+    await call.message.edit_text(
+        text,
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+
+# ===============================
+# IDEA GENERATOR BASE
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="idea"
+)
+async def idea_generator(call: CallbackQuery):
+
+    await call.answer()
+
+    await typing(call.message)
+
+
+    text="""
+💡 *Idea Generator*
+
+Tell us your business type.
+
+Example:
+
+🏪 Shop
+🍔 Restaurant
+🎓 Education
+🏥 Service
+"""
+
+
+    await call.message.edit_text(
+        text,
+        reply_markup=back_button(),
+        parse_mode="Markdown"
+    )
+
+
+
+# ===============================
+# BACK BUTTON
+# ===============================
+
+
+@dp.callback_query(
+    F.data=="back"
+)
+async def back(call: CallbackQuery):
+
+    await call.answer()
+
+    await call.message.edit_text(
+        WELCOME_TEXT,
+        reply_markup=main_menu(),
+        parse_mode="Markdown"
+    )
+
+
+
+# ===============================
+# UNKNOWN MESSAGE
+# ===============================
+
+
+@dp.message()
+async def unknown(message: Message):
+
+    await typing(message)
 
     await message.answer(
-        "✅ Thank you!\n\n"
-        "Your request has been sent successfully.\n"
-        "Our team will contact you soon.",
-        reply_markup=menu
+        """
+🤖 I am Paraweb Assistant.
+
+Please use the buttons below
+to continue your journey 🚀
+""",
+        reply_markup=main_menu()
     )
 
-    await state.clear()
 
 
-# ==========================
-# RUN
-# ==========================
+# ===============================
+# RUN BOT
+# ===============================
+
 
 async def main():
+
+    print("🚀 Paraweb Bot Started")
+
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
+
+
+if __name__=="__main__":
+
     asyncio.run(main())
