@@ -1,6 +1,7 @@
 import asyncio
 import os
 import random
+from database import *
 
 from dotenv import load_dotenv
 
@@ -147,6 +148,11 @@ async def typing(message):
 async def start(message: Message):
 
     await typing(message)
+save_user(
+    message.from_user.id,
+    message.from_user.username,
+    message.from_user.first_name
+)
 
     await message.answer(
         WELCOME_TEXT,
@@ -343,7 +349,7 @@ to continue your journey 🚀
 
 
 async def main():
-
+    init_db()
     print("🚀 Paraweb Bot Started")
 
     await dp.start_polling(bot)
@@ -780,7 +786,10 @@ Contact:
 Paraweb team will contact you soon 🔥
 """
     )
-
+save_lead(
+    message.from_user.id,
+    data
+)
 
     await state.clear() b  
 # ===============================
