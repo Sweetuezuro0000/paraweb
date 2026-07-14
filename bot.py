@@ -70,7 +70,7 @@ def main_menu():
             [
                 InlineKeyboardButton(
                     text="🚀 Start Project",
-                    callback_data="start_project"
+                    callback_data="project_start"
                 )
             ],
 
@@ -313,28 +313,6 @@ async def back(call: CallbackQuery):
         WELCOME_TEXT,
         reply_markup=main_menu(),
         parse_mode="Markdown"
-    )
-
-
-
-# ===============================
-# UNKNOWN MESSAGE
-# ===============================
-
-
-@dp.message()
-async def unknown(message: Message):
-
-    await typing(message)
-
-    await message.answer(
-        """
-🤖 I am Paraweb Assistant.
-
-Please use the buttons below
-to continue your journey 🚀
-""",
-        reply_markup=main_menu()
     )
 
 
@@ -1737,6 +1715,27 @@ Status:
 {status}
 """
     )
+# ===============================
+# UNKNOWN MESSAGE
+# ===============================
+
+
+@dp.message()
+async def unknown(message: Message):
+
+    await typing(message)
+
+    await message.answer(
+        """
+🤖 I am Paraweb Assistant.
+
+Please use the buttons below
+to continue your journey 🚀
+""",
+        reply_markup=main_menu()
+    )
+
+
 async def main():
     init_db()
     print("🚀 Paraweb Bot Started")
