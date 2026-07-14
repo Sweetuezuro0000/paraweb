@@ -17,6 +17,7 @@ from database import get_users
 from database import update_status
 from database import get_user_leads
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.state import State, StatesGroup
 # ===============================
 # CONFIG
 # ===============================
@@ -366,7 +367,8 @@ class ProjectForm(StatesGroup):
     requirement = State()
     contact = State()
 
-
+class AdminForm(StatesGroup):
+    broadcast_message = State()
 
 # ===============================
 # BUSINESS BUTTONS
@@ -1434,7 +1436,7 @@ async def notify_admin(
 # ===============================
 
 
-@dp.callback_query(
+ @dp.callback_query(
     F.data=="broadcast"
 )
 async def broadcast_start(
@@ -1452,8 +1454,8 @@ async def broadcast_start(
 
 
     await state.set_state(
-        "broadcast_message"
-    )
+    AdminForm.broadcast_message
+)
 
 
     await call.message.answer(
@@ -1464,8 +1466,7 @@ Send message for all users:
 """
     )
 @dp.message(
-    F.text,
-    "broadcast_message"
+    AdminForm.broadcast_message
 )
 async def send_broadcast(
     message:Message,
