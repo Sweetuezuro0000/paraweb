@@ -748,6 +748,12 @@ Contact:
 Paraweb team will contact you soon 🔥
 """
     )
+pdf = generate_pdf(data)
+
+await message.answer_document(
+    FSInputFile(pdf),
+    caption="📄 Your Project Quotation"
+)
 
     save_lead(
         message.from_user.id,
