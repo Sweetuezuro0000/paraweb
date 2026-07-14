@@ -748,7 +748,7 @@ Contact:
 Paraweb team will contact you soon 🔥
 """
     )
- pdf = generate_pdf(data)
+pdf = generate_pdf(data)
 
     await message.answer_document(
         FSInputFile(pdf),
