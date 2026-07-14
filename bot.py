@@ -18,6 +18,8 @@ from database import update_status
 from database import get_user_leads
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
+from pdf_generator import generate_pdf
+from aiogram.types import FSInputFile
 # ===============================
 # CONFIG
 # ===============================
