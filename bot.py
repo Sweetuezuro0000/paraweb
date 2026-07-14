@@ -748,24 +748,24 @@ Contact:
 Paraweb team will contact you soon 🔥
 """
     )
-pdf = generate_pdf(data)
+ pdf = generate_pdf(data)
 
-await message.answer_document(
-    FSInputFile(pdf),
-    caption="📄 Your Project Quotation"
-)
+    await message.answer_document(
+        FSInputFile(pdf),
+        caption="📄 Your Project Quotation"
+    )
 
-save_lead(
-    message.from_user.id,
-    data
-)
+    save_lead(
+        message.from_user.id,
+        data
+    )
 
-await notify_admin(
-    data,
-    message.from_user
-)
+    await notify_admin(
+        data,
+        message.from_user
+    )
 
-await state.clear()
+    await state.clear()
 # ===============================
 # PART 3 : PREMIUM EXPERIENCE
 # ===============================
