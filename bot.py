@@ -754,6 +754,7 @@ Paraweb team will contact you soon 🔥
         FSInputFile(pdf),
         caption="📄 Your Project Quotation"
     )
+    await send_payment(message)
 
     save_lead(
         message.from_user.id,
