@@ -164,9 +164,7 @@ async def start(message: Message):
 # ===============================
 
 
-@dp.callback_query(
-    F.data=="start_project"
-)
+@dp.callback_query(F.data == "project_start")
 async def project_start(call: CallbackQuery):
 
     await call.answer()
@@ -181,15 +179,14 @@ I will help you plan your project.
 First choose what you want to build:
 """
 
-try:
-    await call.message.edit_text(
-        text,
-        reply_markup=main_menu(),
-        parse_mode="Markdown"
-    )
-except TelegramBadRequest:
-    pass
-
+    try:
+        await call.message.edit_text(
+            text,
+            reply_markup=main_menu(),
+            parse_mode="Markdown"
+        )
+    except TelegramBadRequest:
+        pass
 # ===============================
 # SERVICE SELECT
 # ===============================
