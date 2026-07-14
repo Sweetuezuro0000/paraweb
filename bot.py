@@ -1435,8 +1435,7 @@ async def notify_admin(
 # BROADCAST
 # ===============================
 
-
- @dp.callback_query(
+@dp.callback_query(
     F.data=="broadcast"
 )
 async def broadcast_start(
