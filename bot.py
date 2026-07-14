@@ -1742,7 +1742,31 @@ to continue your journey 🚀
 """,
         reply_markup=main_menu()
     )
+@dp.callback_query(F.data == "payment_done")
+async def payment_done(call: CallbackQuery):
 
+    await call.answer()
+
+    await call.message.answer(
+        """
+✅ Payment request received.
+
+Our team will verify your payment shortly.
+
+Thank you ❤️
+"""
+    )
+
+    await bot.send_message(
+        ADMIN_ID,
+        f"""
+💰 PAYMENT REQUEST
+
+User: {call.from_user.full_name}
+Username: @{call.from_user.username}
+User ID: {call.from_user.id}
+"""
+    )
 
 async def main():
     init_db()
