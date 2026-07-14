@@ -20,6 +20,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from pdf_generator import generate_pdf
 from aiogram.types import FSInputFile
+from payment import send_payment
 # ===============================
 # CONFIG
 # ===============================
