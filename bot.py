@@ -186,6 +186,34 @@ async def start(message: Message):
         reply_markup=main_menu(),
         parse_mode="Markdown"
     )
+# ===============================
+# START COMMAND WITH LOGGER
+# ===============================
+
+# ⚠️ यहाँ अपने असली लॉग चैनल की ID डालें (यह हमेशा -100 से शुरू होती है)
+LOG_CHANNEL_ID = -1004463199472  
+
+    # ---- यहाँ से लॉग भेजने का नया कोड शुरू होता है ----
+    try:
+        user = message.from_user
+        username = f"@{user.username}" if user.username else "None"
+        
+        log_text = (
+            "🆕 **New User Started the Bot!**\n\n"
+            f"👤 **Name:** {user.first_name}\n"
+            f"🆔 **User ID:** `{user.id}`\n"
+            f"🌐 **Username:** {username}"
+        )
+        
+        # Aiogram में बोट ऑब्जेक्ट को ऐसे कॉल करके चैनल में मैसेज भेजते हैं
+        await message.bot.send_message(
+            chat_id=LOG_CHANNEL_ID, 
+            text=log_text, 
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        print(f"Log channel error: {e}")
+    # ---- नया कोड यहाँ खत्म होता है ----
 
 # ===============================
 # START PROJECT
