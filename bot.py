@@ -21,6 +21,30 @@ from aiogram.fsm.state import State, StatesGroup
 from pdf_generator import generate_pdf
 from aiogram.types import FSInputFile
 from payment import send_payment
+import os
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    # Render जो पोर्ट देगा, यह उसे अपने आप उठा लेगा
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# अपने असली बॉट को चालू (polling) करने वाली लाइन से ठीक पहले इसे लिखें
+keep_alive()
+
+# इसके नीचे आपका पुराना बॉट का कोड रहेगा (जैसे: bot.polling())
+
 # ===============================
 # CONFIG
 # ===============================
