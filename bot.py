@@ -190,10 +190,26 @@ async def start(message: Message):
 # START COMMAND WITH LOGGER
 # ===============================
 
-# ⚠️ यहाँ अपने असली लॉग चैनल की ID डालें (यह हमेशा -100 से शुरू होती है)
+# चैनल की ID हमेशा फंक्शन के बाहर सबसे ऊपर रख सकते हैं
 LOG_CHANNEL_ID = -1004463199472  
 
-    # ---- यहाँ से लॉग भेजने का नया कोड शुरू होता है ----
+@dp.message(CommandStart())
+async def start(message: Message):
+    await typing(message)
+
+    save_user(
+        message.from_user.id,
+        message.from_user.username,
+        message.from_user.first_name
+    )
+
+    await message.answer(
+        WELCOME_TEXT,
+        reply_markup=main_menu(),
+        parse_mode="Markdown"
+    )
+
+    # लॉग भेजने का कोड अब सही स्पेसिंग के साथ फंक्शन के अंदर है 👇
     try:
         user = message.from_user
         username = f"@{user.username}" if user.username else "None"
@@ -205,7 +221,6 @@ LOG_CHANNEL_ID = -1004463199472
             f"🌐 **Username:** {username}"
         )
         
-        # Aiogram में बोट ऑब्जेक्ट को ऐसे कॉल करके चैनल में मैसेज भेजते हैं
         await message.bot.send_message(
             chat_id=LOG_CHANNEL_ID, 
             text=log_text, 
@@ -213,7 +228,6 @@ LOG_CHANNEL_ID = -1004463199472
         )
     except Exception as e:
         print(f"Log channel error: {e}")
-    # ---- नया कोड यहाँ खत्म होता है ----
 
 # ===============================
 # START PROJECT
