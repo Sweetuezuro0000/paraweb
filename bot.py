@@ -171,26 +171,6 @@ async def typing(message):
 # START COMMAND
 # ===============================
 
-@dp.message(CommandStart())
-async def start(message: Message):
-    await typing(message)
-
-    save_user(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.first_name
-    )
-
-    await message.answer(
-        WELCOME_TEXT,
-        reply_markup=main_menu(),
-        parse_mode="Markdown"
-    )
-# ===============================
-# START COMMAND WITH LOGGER
-# ===============================
-
-# चैनल की ID हमेशा फंक्शन के बाहर सबसे ऊपर रख सकते हैं
 LOG_CHANNEL_ID = -1004463199472  
 
 @dp.message(CommandStart())
