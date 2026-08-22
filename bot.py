@@ -2,13 +2,14 @@ import asyncio
 import os
 import random
 from threading import Thread
+from datetime import datetime
 
 from dotenv import load_dotenv
 from flask import Flask
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -19,8 +20,9 @@ from aiogram.types import (
     FSInputFile,
 )
 
+# Aapki Purani Database aur Manager Files
 from database import (
-    init_db,
+    init_db as init_main_db,
     save_user,
     save_lead,
     get_leads,
@@ -28,6 +30,16 @@ from database import (
     get_user_leads,
     update_status,
     connect,
+)
+
+# Hosting Management SQLite Functions
+from hosting_manager import (
+    init_db as init_hosting_db,
+    add_user_bot,
+    extend_user_bot,
+    get_user_bots,
+    get_expiring_users,
+    mark_notified,
 )
 
 from pdf_generator import generate_pdf
@@ -54,10 +66,9 @@ try:
 except ValueError:
     raise ValueError("ADMIN_ID must be a Telegram numeric ID")
 
-
 BRAND = "Paraweb"
-
 LOG_CHANNEL_ID = -1004463199472
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "@YourAdminUsername")
 
 
 # =========================================================
@@ -66,16 +77,13 @@ LOG_CHANNEL_ID = -1004463199472
 
 app = Flask(__name__)
 
-
 @app.route("/")
 def home():
     return "Paraweb Bot is alive!"
 
-
 def run_web():
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
-
 
 def keep_alive():
     thread = Thread(target=run_web, daemon=True)
@@ -83,7 +91,7 @@ def keep_alive():
 
 
 # =========================================================
-# BOT
+# BOT & DISPATCHER
 # =========================================================
 
 bot = Bot(TOKEN)
@@ -91,7 +99,7 @@ dp = Dispatcher()
 
 
 # =========================================================
-# TEXT
+# TEXTS & STATES
 # =========================================================
 
 WELCOME_TEXT = """
@@ -100,20 +108,13 @@ WELCOME_TEXT = """
 Where ideas become digital products.
 
 We build:
-
 🌐 Websites
 📱 Mobile Apps
 🤖 Telegram Bots
 
 Ready to transform your idea into reality?
-
 Choose an option below 👇
 """
-
-
-# =========================================================
-# STATES
-# =========================================================
 
 class ProjectForm(StatesGroup):
     service = State()
@@ -122,7 +123,6 @@ class ProjectForm(StatesGroup):
     budget = State()
     requirement = State()
     contact = State()
-
 
 class AdminForm(StatesGroup):
     broadcast_message = State()
@@ -135,1825 +135,546 @@ class AdminForm(StatesGroup):
 def main_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Start Project", callback_data="project_start")],
             [
-                InlineKeyboardButton(
-                    text="🚀 Start Project",
-                    callback_data="project_start",
-                )
+                InlineKeyboardButton(text="🌐 Website", callback_data="service_website"),
+                InlineKeyboardButton(text="📱 App", callback_data="service_app"),
             ],
+            [InlineKeyboardButton(text="🤖 Telegram Bot", callback_data="service_bot")],
             [
-                InlineKeyboardButton(
-                    text="🌐 Website",
-                    callback_data="service_website",
-                ),
-                InlineKeyboardButton(
-                    text="📱 App",
-                    callback_data="service_app",
-                ),
+                InlineKeyboardButton(text="💡 Idea Generator", callback_data="idea"),
+                InlineKeyboardButton(text="🧠 Assistant Mode", callback_data="mode"),
             ],
+            [InlineKeyboardButton(text="🔮 Future Preview", callback_data="future")],
             [
-                InlineKeyboardButton(
-                    text="🤖 Telegram Bot",
-                    callback_data="service_bot",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💡 Idea Generator",
-                    callback_data="idea",
-                ),
-                InlineKeyboardButton(
-                    text="🧠 Assistant Mode",
-                    callback_data="mode",
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🔮 Future Preview",
-                    callback_data="future",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📊 My Project",
-                    callback_data="my_project",
-                )
+                InlineKeyboardButton(text="📊 My Project", callback_data="my_project"),
+                InlineKeyboardButton(text="🖥️ My Hosted Bots", callback_data="check_my_bots"),
             ],
         ]
     )
-
 
 def service_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="🌐 Website",
-                    callback_data="service_website",
-                ),
-                InlineKeyboardButton(
-                    text="📱 App",
-                    callback_data="service_app",
-                ),
+                InlineKeyboardButton(text="🌐 Website", callback_data="service_website"),
+                InlineKeyboardButton(text="📱 App", callback_data="service_app"),
             ],
-            [
-                InlineKeyboardButton(
-                    text="🤖 Telegram Bot",
-                    callback_data="service_bot",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
+            [InlineKeyboardButton(text="🤖 Telegram Bot", callback_data="service_bot")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")],
         ]
     )
-
 
 def back_button():
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ]
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text="⬅️ Back", callback_data="back")]]
     )
-
 
 def business_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="🏪 Shop",
-                    callback_data="business_shop",
-                ),
-                InlineKeyboardButton(
-                    text="🍔 Restaurant",
-                    callback_data="business_restaurant",
-                ),
+                InlineKeyboardButton(text="🏪 Shop", callback_data="business_shop"),
+                InlineKeyboardButton(text="🍔 Restaurant", callback_data="business_restaurant"),
             ],
             [
-                InlineKeyboardButton(
-                    text="🎓 Education",
-                    callback_data="business_education",
-                ),
-                InlineKeyboardButton(
-                    text="🏢 Company",
-                    callback_data="business_company",
-                ),
+                InlineKeyboardButton(text="🎓 Education", callback_data="business_education"),
+                InlineKeyboardButton(text="🏢 Company", callback_data="business_company"),
             ],
-            [
-                InlineKeyboardButton(
-                    text="💡 Startup",
-                    callback_data="business_startup",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
+            [InlineKeyboardButton(text="💡 Startup", callback_data="business_startup")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")],
         ]
     )
-
 
 def feature_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(
-                    text="💳 Payment",
-                    callback_data="feature_payment",
-                ),
-                InlineKeyboardButton(
-                    text="👥 Login",
-                    callback_data="feature_login",
-                ),
+                InlineKeyboardButton(text="💳 Payment", callback_data="feature_payment"),
+                InlineKeyboardButton(text="👥 Login", callback_data="feature_login"),
             ],
             [
-                InlineKeyboardButton(
-                    text="📊 Dashboard",
-                    callback_data="feature_dashboard",
-                ),
-                InlineKeyboardButton(
-                    text="📦 Products",
-                    callback_data="feature_product",
-                ),
+                InlineKeyboardButton(text="📊 Dashboard", callback_data="feature_dashboard"),
+                InlineKeyboardButton(text="📦 Products", callback_data="feature_product"),
             ],
             [
-                InlineKeyboardButton(
-                    text="🔔 Notifications",
-                    callback_data="feature_notifications",
-                ),
-                InlineKeyboardButton(
-                    text="🤖 AI",
-                    callback_data="feature_ai",
-                ),
+                InlineKeyboardButton(text="🔔 Notifications", callback_data="feature_notifications"),
+                InlineKeyboardButton(text="🤖 AI", callback_data="feature_ai"),
             ],
-            [
-                InlineKeyboardButton(
-                    text="➡️ Continue",
-                    callback_data="feature_done",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
+            [InlineKeyboardButton(text="➡️ Continue", callback_data="feature_done")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")],
         ]
     )
-
 
 def budget_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="₹5k - ₹10k",
-                    callback_data="budget_5",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="₹10k - ₹25k",
-                    callback_data="budget_10",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="₹25k+",
-                    callback_data="budget_25",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💬 Discuss",
-                    callback_data="budget_discuss",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
+            [InlineKeyboardButton(text="₹5k - ₹10k", callback_data="budget_5")],
+            [InlineKeyboardButton(text="₹10k - ₹25k", callback_data="budget_10")],
+            [InlineKeyboardButton(text="₹25k+", callback_data="budget_25")],
+            [InlineKeyboardButton(text="💬 Discuss", callback_data="budget_discuss")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")],
         ]
     )
 
-
-# =========================================================
-# PERSONALITY
-# =========================================================
-
 PERSONALITIES = {
-    "developer": """
-👨‍💻 *Developer Mode Activated*
-
-I will focus on:
-
-• Technology
-• Features
-• Architecture
-• Performance
-""",
-    "business": """
-💼 *Business Mode Activated*
-
-I will focus on:
-
-• Growth
-• Customers
-• Revenue
-• Strategy
-""",
-    "creative": """
-🎨 *Creative Mode Activated*
-
-I will focus on:
-
-• Design
-• Ideas
-• User Experience
-""",
+    "developer": "👨‍💻 *Developer Mode Activated*\n\nFocus: Technology, Features, Architecture.",
+    "business": "💼 *Business Mode Activated*\n\nFocus: Growth, Customers, Revenue, Strategy.",
+    "creative": "🎨 *Creative Mode Activated*\n\nFocus: Design, Ideas, User Experience.",
 }
-
 
 def personality_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="👨‍💻 Developer",
-                    callback_data="mode_developer",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="💼 Business",
-                    callback_data="mode_business",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🎨 Creative",
-                    callback_data="mode_creative",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
+            [InlineKeyboardButton(text="👨‍💻 Developer", callback_data="mode_developer")],
+            [InlineKeyboardButton(text="💼 Business", callback_data="mode_business")],
+            [InlineKeyboardButton(text="🎨 Creative", callback_data="mode_creative")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")],
         ]
     )
 
 
 # =========================================================
-# ADMIN
+# HELPER FUNCTIONS
 # =========================================================
 
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
-
-def admin_keyboard():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📩 View Leads",
-                    callback_data="admin_leads",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="👥 Users Count",
-                    callback_data="admin_users",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="📢 Broadcast",
-                    callback_data="broadcast",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⬅️ Back",
-                    callback_data="back",
-                )
-            ],
-        ]
-    )
-
-
-def status_keyboard(lead_id):
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📞 Contacted",
-                    callback_data=f"status_contacted_{lead_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⚙️ Working",
-                    callback_data=f"status_working_{lead_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="⏸️ On Hold",
-                    callback_data=f"status_hold_{lead_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Cancelled",
-                    callback_data=f"status_cancelled_{lead_id}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✅ Done",
-                    callback_data=f"status_done_{lead_id}",
-                )
-            ],
-        ]
-    )
-
-
-# =========================================================
-# HELPERS
-# =========================================================
-
 async def typing(message: Message):
     try:
-        await bot.send_chat_action(
-            chat_id=message.chat.id,
-            action="typing",
-        )
+        await bot.send_chat_action(chat_id=message.chat.id, action="typing")
         await asyncio.sleep(random.uniform(0.5, 1.0))
     except Exception as e:
         print(f"Typing error: {e}")
 
-
-async def safe_edit(
-    call: CallbackQuery,
-    text: str,
-    reply_markup=None,
-    parse_mode=None,
-):
+async def safe_edit(call: CallbackQuery, text: str, reply_markup=None, parse_mode=None):
     try:
-        await call.message.edit_text(
-            text,
-            reply_markup=reply_markup,
-            parse_mode=parse_mode,
-        )
+        await call.message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
             print(f"Edit error: {e}")
 
-
 def valid_phone(text: str) -> bool:
-    cleaned = (
-        text.replace(" ", "")
-        .replace("-", "")
-        .replace("(", "")
-        .replace(")", "")
-    )
-
-    if cleaned.startswith("+"):
-        digits = cleaned[1:]
-    else:
-        digits = cleaned
-
+    cleaned = text.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    digits = cleaned[1:] if cleaned.startswith("+") else cleaned
     return digits.isdigit() and 10 <= len(digits) <= 15
-
 
 def calculate_score(data):
     score = 50
-
-    if data.get("features"):
-        score += 20
-
-    if data.get("budget"):
-        score += 15
-
-    requirement = data.get("requirement", "")
-
-    if len(requirement) > 50:
-        score += 15
-
+    if data.get("features"): score += 20
+    if data.get("budget"): score += 15
+    if len(data.get("requirement", "")) > 50: score += 15
     return min(score, 100)
-
 
 def recommendation(service, business):
     result = {
-        "website": """
-🌐 *Website Recommendation*
-
-✓ Modern responsive design
-✓ SEO optimization
-✓ Fast loading
-✓ Admin management
-""",
-        "app": """
-📱 *App Recommendation*
-
-✓ User accounts
-✓ Push notifications
-✓ Payment system
-✓ Dashboard
-""",
-        "bot": """
-🤖 *Bot Recommendation*
-
-✓ Automation
-✓ Customer support
-✓ Lead management
-✓ AI integration
-""",
+        "website": "🌐 *Website Recommendation*\n✓ Modern responsive design\n✓ SEO optimization",
+        "app": "📱 *App Recommendation*\n✓ User accounts\n✓ Push notifications",
+        "bot": "🤖 *Bot Recommendation*\n✓ Automation\n✓ Customer support",
     }
-
-    return result.get(
-        service,
-        "Custom solution recommended",
-    )
+    return result.get(service, "Custom solution recommended")
 
 
 # =========================================================
-# START
+# START COMMAND
 # =========================================================
 
 @dp.message(CommandStart())
 async def start(message: Message):
     await typing(message)
-
     try:
-        save_user(
-            message.from_user.id,
-            message.from_user.username,
-            message.from_user.first_name,
-        )
+        save_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
     except Exception as e:
         print(f"Save user error: {e}")
 
-    await message.answer(
-        WELCOME_TEXT,
-        reply_markup=main_menu(),
-        parse_mode="Markdown",
-    )
+    await message.answer(WELCOME_TEXT, reply_markup=main_menu(), parse_mode="Markdown")
 
     try:
         user = message.from_user
-
-        username = (
-            f"@{user.username}"
-            if user.username
-            else "None"
-        )
-
-        log_text = (
-            "🆕 *New User Started the Bot!*\n\n"
-            f"👤 *Name:* {user.first_name}\n"
-            f"🆔 *User ID:* `{user.id}`\n"
-            f"🌐 *Username:* {username}"
-        )
-
-        await bot.send_message(
-            chat_id=LOG_CHANNEL_ID,
-            text=log_text,
-            parse_mode="Markdown",
-        )
-
+        username = f"@{user.username}" if user.username else "None"
+        log_text = f"🆕 *New User Started!*\n👤 *Name:* {user.first_name}\n🆔 *ID:* `{user.id}`\n🌐 *Username:* {username}"
+        await bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_text, parse_mode="Markdown")
     except Exception as e:
         print(f"Log channel error: {e}")
 
 
 # =========================================================
-# START PROJECT
+# HOSTING MANAGEMENT (ADMIN & USER COMMANDS)
+# =========================================================
+
+# Admin: Add New Bot Hosting -> /addbot <user_id> <bot_name> <days>
+@dp.message(Command("addbot"))
+async def admin_add_bot(message: Message):
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ Ye command sirf Admin use kar sakta hai.")
+        return
+
+    try:
+        args = message.text.split()[1:]
+        user_id = int(args[0])
+        bot_name = args[1]
+        days = int(args[2])
+
+        success, msg = add_user_bot(user_id, bot_name, days)
+        await message.answer(msg, parse_mode="Markdown")
+
+    except (IndexError, ValueError):
+        await message.answer("⚠️ *Wrong Format!*\n\nUse: `/addbot <user_id> <bot_name> <days>`\nExample: `/addbot 987654321 MyBot 30`", parse_mode="Markdown")
+
+
+# Admin: Extend Bot Hosting -> /extend <user_id> <bot_name> <days>
+@dp.message(Command("extend"))
+async def admin_extend_bot(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        args = message.text.split()[1:]
+        user_id = int(args[0])
+        bot_name = args[1]
+        days = int(args[2])
+
+        success, msg = extend_user_bot(user_id, bot_name, days)
+        await message.answer(msg, parse_mode="Markdown")
+
+        if success:
+            try:
+                await bot.send_message(user_id, f"🎉 *Subscription Updated!*\nAapka bot `{bot_name}` successfully *{days} din* ke liye extend ho gaya hai!", parse_mode="Markdown")
+            except Exception:
+                pass
+
+    except (IndexError, ValueError):
+        await message.answer("⚠️ *Wrong Format!*\n\nUse: `/extend <user_id> <bot_name> <days>`", parse_mode="Markdown")
+
+
+# User: View Hosted Bots Status -> /mybots or /status
+@dp.message(Command("mybots"))
+@dp.message(Command("status"))
+async def show_user_hosting_status(message: Message):
+    await display_user_bots(message.from_user.id, message.chat.id)
+
+
+@dp.callback_query(F.data == "check_my_bots")
+async def callback_check_my_bots(call: CallbackQuery):
+    await call.answer()
+    await display_user_bots(call.from_user.id, call.message.chat.id)
+
+
+async def display_user_bots(user_id: int, chat_id: int):
+    bots = get_user_bots(user_id)
+    if not bots:
+        await bot.send_message(chat_id, f"❌ Aapka koi bhi bot {BRAND} server par host nahi hai.")
+        return
+
+    for b in bots:
+        b_id, b_name, days, price, exp_date = b
+        exp_dt = datetime.strptime(exp_date, "%Y-%m-%d %H:%M:%S")
+        remaining_days = (exp_dt - datetime.now()).days
+
+        status_tag = f"🟢 Active ({remaining_days} days left)" if remaining_days >= 0 else "🔴 Expired"
+
+        info_msg = (
+            f"🤖 *Bot Name:* `{b_name}`\n"
+            f"📊 *Status:* {status_tag}\n"
+            f"📅 *Expiry Date:* `{exp_date[:10]}`\n"
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🔄 Extend / Renew Plan", callback_data=f"renew_{b_name}")]]
+        )
+        await bot.send_message(chat_id, info_msg, parse_mode="Markdown", reply_markup=markup)
+
+
+# Callbacks for Hosting Extension Request
+@dp.callback_query(F.data.startswith("renew_"))
+async def handle_renew_click(call: CallbackQuery):
+    await call.answer()
+    bot_name = call.data.replace("renew_", "")
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="7 Days - ₹19", callback_data=f"plan_7_{bot_name}")],
+            [InlineKeyboardButton(text="14 Days - ₹35", callback_data=f"plan_14_{bot_name}")],
+            [InlineKeyboardButton(text="30 Days - ₹59", callback_data=f"plan_30_{bot_name}")],
+        ]
+    )
+    await safe_edit(call, f"💳 `{bot_name}` ke liye Plan select karein:", reply_markup=markup, parse_mode="Markdown")
+
+
+@dp.callback_query(F.data.startswith("plan_"))
+async def handle_plan_select(call: CallbackQuery):
+    await call.answer("Request processing...")
+    parts = call.data.split("_")
+    days = int(parts[1])
+    bot_name = parts[2]
+    user_id = call.from_user.id
+
+    await call.message.answer(
+        f"➡️ `{bot_name}` (Plan: {days} Days) ke renewal ke liye payment karke Admin ko screenshot bhejein.\n\n"
+        f"👤 *Admin:* {ADMIN_USERNAME}",
+        parse_mode="Markdown"
+    )
+
+    admin_alert = (
+        f"🔔 *[{BRAND}] Renewal Requested!*\n\n"
+        f"• *User ID:* `{user_id}`\n"
+        f"• *Bot Name:* `{bot_name}`\n"
+        f"• *Plan Selected:* {days} Days\n\n"
+        f"Approval ke liye command:\n"
+        f"`/extend {user_id} {bot_name} {days}`"
+    )
+    await bot.send_message(ADMIN_ID, admin_alert, parse_mode="Markdown")
+
+
+# Auto Expiry Alert Async Task
+async def hosting_expiry_checker():
+    while True:
+        try:
+            expiring_records = get_expiring_users()
+            for rec in expiring_records:
+                rec_id, u_id, b_name, exp_date = rec
+                alert_msg = (
+                    f"⚠️ *[{BRAND}] Hosting Expiry Warning!*\n\n"
+                    f"Aapka bot `{b_name}` expire hone wala hai.\n"
+                    f"📅 *Expiry Date:* `{exp_date[:10]}`\n\n"
+                    f"Renew karne ke liye `/mybots` run karein."
+                )
+                try:
+                    await bot.send_message(u_id, alert_msg, parse_mode="Markdown")
+                    mark_notified(rec_id)
+                except Exception as e:
+                    print(f"Alert sending failed for {u_id}: {e}")
+        except Exception as e:
+            print(f"Error in expiry checker task: {e}")
+
+        await asyncio.sleep(3600)  # Har 1 ghante me check karega
+
+
+# =========================================================
+# EXISTING PROJECT & SERVICES FLOW
 # =========================================================
 
 @dp.callback_query(F.data == "project_start")
-async def project_start(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def project_start(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
     await state.clear()
-
-    await safe_edit(
-        call,
-        """
-🔥 *Project Assistant Activated*
-
-First choose what you want to build:
-""",
-        reply_markup=service_keyboard(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# SERVICE
-# =========================================================
+    await safe_edit(call, "🔥 *Project Assistant Activated*\n\nFirst choose what you want to build:", reply_markup=service_keyboard(), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("service_"))
-async def service_select(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def service_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
-    service = call.data.replace(
-        "service_",
-        "",
+    service = call.data.replace("service_", "")
+    names = {"website": "🌐 Website Development", "app": "📱 Mobile App Development", "bot": "🤖 Telegram Bot Development"}
+    await state.update_data(service=service, features=[])
+    
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Continue", callback_data=f"continue_{service}")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")]
+        ]
     )
-
-    names = {
-        "website": "🌐 Website Development",
-        "app": "📱 Mobile App Development",
-        "bot": "🤖 Telegram Bot Development",
-    }
-
-    await state.update_data(
-        service=service,
-        features=[],
-    )
-
-    await safe_edit(
-        call,
-        f"""
-✅ *Selected:*
-
-{names.get(service, service)}
-
-Great choice 🚀
-
-Now we will understand your requirements.
-""",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="📝 Continue",
-                        callback_data=f"continue_{service}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="⬅️ Back",
-                        callback_data="back",
-                    )
-                ],
-            ]
-        ),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# CONTINUE PROJECT
-# =========================================================
+    await safe_edit(call, f"✅ *Selected:*\n\n{names.get(service, service)}\n\nGreat choice 🚀\nNow we will understand your requirements.", reply_markup=markup, parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("continue_"))
-async def continue_project(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def continue_project(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
-    service = call.data.replace(
-        "continue_",
-        "",
-    )
-
-    await state.update_data(
-        service=service,
-        features=[],
-    )
-
-    await state.set_state(
-        ProjectForm.business
-    )
-
-    await safe_edit(
-        call,
-        """
-🔥 *Great!*
-
-Tell us about your business.
-
-Choose category 👇
-""",
-        reply_markup=business_keyboard(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# BUSINESS
-# =========================================================
+    service = call.data.replace("continue_", "")
+    await state.update_data(service=service, features=[])
+    await state.set_state(ProjectForm.business)
+    await safe_edit(call, "🔥 *Great!*\n\nTell us about your business.\nChoose category 👇", reply_markup=business_keyboard(), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("business_"))
-async def business_select(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def business_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
-    business = call.data.replace(
-        "business_",
-        "",
-    )
-
-    await state.update_data(
-        business=business,
-        features=[],
-    )
-
-    await state.set_state(
-        ProjectForm.features
-    )
-
-    await safe_edit(
-        call,
-        """
-⚙️ *What features do you need?*
-
-Select all required features.
-
-Then press Continue 👇
-""",
-        reply_markup=feature_keyboard(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# FEATURES
-# =========================================================
+    business = call.data.replace("business_", "")
+    await state.update_data(business=business, features=[])
+    await state.set_state(ProjectForm.features)
+    await safe_edit(call, "⚙️ *What features do you need?*\n\nSelect all required features.\nThen press Continue 👇", reply_markup=feature_keyboard(), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("feature_"))
-async def feature_select(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def feature_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
-    feature = call.data.replace(
-        "feature_",
-        "",
-    )
+    feature = call.data.replace("feature_", "")
 
     if feature == "done":
         data = await state.get_data()
-
         if not data.get("features"):
-            await call.answer(
-                "Please select at least one feature.",
-                show_alert=True,
-            )
+            await call.answer("Please select at least one feature.", show_alert=True)
             return
-
-        await state.set_state(
-            ProjectForm.budget
-        )
-
-        await safe_edit(
-            call,
-            """
-💰 *What is your approximate budget?*
-""",
-            reply_markup=budget_keyboard(),
-            parse_mode="Markdown",
-        )
-
+        await state.set_state(ProjectForm.budget)
+        await safe_edit(call, "💰 *What is your approximate budget?*", reply_markup=budget_keyboard(), parse_mode="Markdown")
         return
 
     data = await state.get_data()
-
-    features = data.get(
-        "features",
-        [],
-    )
-
-    # Prevent duplicate feature
+    features = data.get("features", [])
     if feature in features:
-        await call.answer(
-            "Already selected ✅",
-            show_alert=False,
-        )
+        await call.answer("Already selected ✅", show_alert=False)
         return
-
     features.append(feature)
-
-    await state.update_data(
-        features=features,
-    )
-
-    await call.answer(
-        f"Added: {feature} ✅"
-    )
-
-
-# =========================================================
-# BUDGET
-# =========================================================
+    await state.update_data(features=features)
+    await call.answer(f"Added: {feature} ✅")
 
 @dp.callback_query(F.data.startswith("budget_"))
-async def budget_select(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def budget_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
-    budget = call.data.replace(
-        "budget_",
-        "",
-    )
-
-    budget_names = {
-        "5": "₹5k - ₹10k",
-        "10": "₹10k - ₹25k",
-        "25": "₹25k+",
-        "discuss": "Discuss with team",
-    }
-
-    await state.update_data(
-        budget=budget_names.get(
-            budget,
-            budget,
-        )
-    )
-
-    await state.set_state(
-        ProjectForm.requirement
-    )
-
-    await safe_edit(
-        call,
-        """
-📝 *Now describe your project.*
-
-Tell us:
-
-• Your idea
-• Required pages/features
-• Any reference
-""",
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# REQUIREMENT
-# =========================================================
+    budget = call.data.replace("budget_", "")
+    budget_names = {"5": "₹5k - ₹10k", "10": "₹10k - ₹25k", "25": "₹25k+", "discuss": "Discuss with team"}
+    await state.update_data(budget=budget_names.get(budget, budget))
+    await state.set_state(ProjectForm.requirement)
+    await safe_edit(call, "📝 *Now describe your project.*\n\nTell us:\n• Your idea\n• Required pages/features\n• Any reference", parse_mode="Markdown")
 
 @dp.message(ProjectForm.requirement)
-async def requirement_save(
-    message: Message,
-    state: FSMContext,
-):
-    if not message.text:
-        await message.answer(
-            "Please send your project requirement as text."
-        )
+async def requirement_save(message: Message, state: FSMContext):
+    if not message.text or len(message.text.strip()) < 10:
+        await message.answer("Please describe your project in a little more detail.")
         return
-
-    requirement = message.text.strip()
-
-    if len(requirement) < 10:
-        await message.answer(
-            "Please describe your project in a little more detail."
-        )
-        return
-
-    await state.update_data(
-        requirement=requirement,
-    )
-
-    await state.set_state(
-        ProjectForm.contact
-    )
-
-    await message.answer(
-        """
-📞 *Almost done!*
-
-Please share your contact number.
-
-Example:
-`9876543210`
-""",
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# CONTACT + FINAL
-# =========================================================
+    await state.update_data(requirement=message.text.strip())
+    await state.set_state(ProjectForm.contact)
+    await message.answer("📞 *Almost done!*\n\nPlease share your contact number.\n\nExample:\n`9876543210`", parse_mode="Markdown")
 
 @dp.message(ProjectForm.contact)
-async def contact_save(
-    message: Message,
-    state: FSMContext,
-):
-    if not message.text:
-        await message.answer(
-            "Please send your contact number."
-        )
+async def contact_save(message: Message, state: FSMContext):
+    if not message.text or not valid_phone(message.text.strip()):
+        await message.answer("❌ Invalid contact number.\nPlease send a valid 10–15 digit number.")
         return
 
-    contact = message.text.strip()
-
-    if not valid_phone(contact):
-        await message.answer(
-            "❌ Invalid contact number.\n\n"
-            "Please send a valid 10–15 digit number."
-        )
-        return
-
-    await state.update_data(
-        contact=contact,
-    )
-
+    await state.update_data(contact=message.text.strip())
     data = await state.get_data()
 
-    # -----------------------------------------------------
-    # SAVE LEAD FIRST
-    # -----------------------------------------------------
-
     try:
-        save_lead(
-            message.from_user.id,
-            data,
-        )
+        save_lead(message.from_user.id, data)
     except Exception as e:
         print(f"Lead save error: {e}")
 
-        await message.answer(
-            "❌ Something went wrong while saving your request.\n"
-            "Please try again later."
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # SCORE
-    # -----------------------------------------------------
-
     score = calculate_score(data)
-
-    recommendation_text = recommendation(
-        data.get("service"),
-        data.get("business"),
-    )
-
-    # -----------------------------------------------------
-    # SUMMARY
-    # -----------------------------------------------------
+    rec_text = recommendation(data.get("service"), data.get("business"))
 
     await message.answer(
-        f"""
-🚀 *PROJECT RECEIVED*
-
-🌐 *Service:*
-{data.get("service")}
-
-🏢 *Business:*
-{data.get("business")}
-
-⚙️ *Features:*
-{", ".join(data.get("features", []))}
-
-💰 *Budget:*
-{data.get("budget")}
-
-📝 *Requirement:*
-{data.get("requirement")}
-
-📞 *Contact:*
-{data.get("contact")}
-
-📊 *Project Score:*
-{score}/100
-
-{recommendation_text}
-
-✅ Your request has been received.
-
-Paraweb team will contact you soon 🔥
-""",
-        parse_mode="Markdown",
+        f"🚀 *PROJECT RECEIVED*\n\n🌐 *Service:* {data.get('service')}\n🏢 *Business:* {data.get('business')}\n⚙️ *Features:* {', '.join(data.get('features', []))}\n💰 *Budget:* {data.get('budget')}\n📝 *Requirement:* {data.get('requirement')}\n📞 *Contact:* {data.get('contact')}\n📊 *Score:* {score}/100\n\n{rec_text}\n\n✅ Paraweb team will contact you soon 🔥",
+        parse_mode="Markdown"
     )
-
-    # -----------------------------------------------------
-    # PDF
-    # -----------------------------------------------------
 
     try:
         pdf = generate_pdf(data)
-
         if pdf and os.path.exists(pdf):
-            await message.answer_document(
-                FSInputFile(pdf),
-                caption="📄 Your Project Quotation",
-            )
-
+            await message.answer_document(FSInputFile(pdf), caption="📄 Your Project Quotation")
     except Exception as e:
         print(f"PDF error: {e}")
 
-    # -----------------------------------------------------
-    # PAYMENT
-    # -----------------------------------------------------
+    try: await send_payment(message)
+    except Exception as e: print(f"Payment error: {e}")
 
-    try:
-        await send_payment(message)
-    except Exception as e:
-        print(f"Payment error: {e}")
-
-    # -----------------------------------------------------
-    # ADMIN NOTIFICATION
-    # -----------------------------------------------------
-
-    try:
-        await notify_admin(
-            data,
-            message.from_user,
-        )
-    except Exception as e:
-        print(f"Admin notification error: {e}")
+    try: await notify_admin(data, message.from_user)
+    except Exception as e: print(f"Admin notification error: {e}")
 
     await state.clear()
 
-
-# =========================================================
-# ADMIN NOTIFICATION
-# =========================================================
-
 async def notify_admin(data, user):
-    username = (
-        f"@{user.username}"
-        if user.username
-        else "None"
-    )
-
-    text = f"""
-🔥 *NEW PARAWEB LEAD*
-
-👤 *Name:*
-{user.first_name}
-
-🌐 *Service:*
-{data.get("service")}
-
-🏢 *Business:*
-{data.get("business")}
-
-⚙️ *Features:*
-{", ".join(data.get("features", []))}
-
-💰 *Budget:*
-{data.get("budget")}
-
-📝 *Requirement:*
-{data.get("requirement")}
-
-📞 *Contact:*
-{data.get("contact")}
-
-🆔 *User ID:*
-{user.id}
-
-🌐 *Username:*
-{username}
-"""
-
-    await bot.send_message(
-        ADMIN_ID,
-        text,
-        parse_mode="Markdown",
-    )
+    username = f"@{user.username}" if user.username else "None"
+    text = f"🔥 *NEW PARAWEB LEAD*\n\n👤 *Name:* {user.first_name}\n🌐 *Service:* {data.get('service')}\n🏢 *Business:* {data.get('business')}\n⚙️ *Features:* {', '.join(data.get('features', []))}\n💰 *Budget:* {data.get('budget')}\n📝 *Req:* {data.get('requirement')}\n📞 *Contact:* {data.get('contact')}\n🆔 *User ID:* `{user.id}`\n🌐 *Username:* {username}"
+    await bot.send_message(ADMIN_ID, text, parse_mode="Markdown")
 
 
 # =========================================================
-# IDEA GENERATOR
+# OTHER FEATURES & ADMIN PANEL
 # =========================================================
 
 @dp.callback_query(F.data == "idea")
 async def idea_generator(call: CallbackQuery):
     await call.answer()
-
-    await safe_edit(
-        call,
-        """
-💡 *Idea Generator*
-
-Tell us your business type.
-
-Examples:
-
-🏪 Shop
-🍔 Restaurant
-🎓 Education
-🏥 Service
-🚀 Startup
-
-Send your business type as a message.
-""",
-        reply_markup=back_button(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# PERSONALITY
-# =========================================================
+    await safe_edit(call, "💡 *Idea Generator*\n\nTell us your business type in a message.", reply_markup=back_button(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mode")
 async def choose_mode(call: CallbackQuery):
     await call.answer()
-
-    await safe_edit(
-        call,
-        """
-🧠 *Choose your Paraweb Assistant personality:*
-""",
-        reply_markup=personality_keyboard(),
-        parse_mode="Markdown",
-    )
-
+    await safe_edit(call, "🧠 *Choose your Paraweb Assistant personality:*", reply_markup=personality_keyboard(), parse_mode="Markdown")
 
 @dp.callback_query(F.data.startswith("mode_"))
 async def mode_select(call: CallbackQuery):
     await call.answer()
-
-    mode = call.data.replace(
-        "mode_",
-        "",
-    )
-
-    await safe_edit(
-        call,
-        PERSONALITIES.get(
-            mode,
-            "Mode not found.",
-        ),
-        reply_markup=back_button(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# FUTURE PREVIEW
-# =========================================================
-
-async def terminal_effect(message):
-    logs = [
-        "> Initializing Paraweb Core...",
-        "> Loading development modules...",
-        "> Connecting creative engine...",
-        "> System Ready ✅",
-    ]
-
-    box = await message.answer(logs[0])
-
-    current = ""
-
-    for log in logs:
-        current += "\n" + log
-
-        await asyncio.sleep(0.7)
-
-        try:
-            await box.edit_text(current)
-        except TelegramBadRequest:
-            pass
-
-    return box
-
+    mode = call.data.replace("mode_", "")
+    await safe_edit(call, PERSONALITIES.get(mode, "Mode not found."), reply_markup=back_button(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "future")
 async def future_preview(call: CallbackQuery):
     await call.answer()
-
-    await terminal_effect(
-        call.message
-    )
-
-    await call.message.answer(
-        """
-🔮 *Future Preview Complete*
-
-Your idea can become:
-
-🚀 Digital Platform
-
-Possible upgrades:
-
-✓ Mobile App
-✓ Automation
-✓ Customer System
-✓ AI Features
-✓ Payment System
-✓ Admin Dashboard
-
-Paraweb can build it.
-""",
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# ANALYZE COMMAND
-# =========================================================
-
-async def ai_thinking(message):
-    steps = [
-        "🔍 Understanding your idea...",
-        "⚙️ Analyzing requirements...",
-        "🧠 Preparing best solution...",
-        "🚀 Creating roadmap...",
-    ]
-
-    temp = await message.answer(steps[0])
-
-    for step in steps[1:]:
-        await asyncio.sleep(0.8)
-
-        try:
-            await temp.edit_text(step)
-        except TelegramBadRequest:
-            pass
-
-    await asyncio.sleep(0.5)
-
-    try:
-        await temp.delete()
-    except Exception:
-        pass
-
-
-@dp.message(F.text == "/analyze")
-async def analyze(message: Message):
-    await ai_thinking(message)
-
-    await message.answer(
-        """
-🧠 *Analysis Complete*
-
-Project Strength:
-
-████████░░ 80%
-
-Recommendation:
-
-Start with MVP,
-then expand features 🚀
-""",
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# BACK
-# =========================================================
+    await call.message.answer("🔮 *Future Preview Complete*\n\nYour idea can become a Digital Platform with App, AI, and Admin Dashboard.", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "back")
-async def back(
-    call: CallbackQuery,
-    state: FSMContext,
-):
+async def back(call: CallbackQuery, state: FSMContext):
     await call.answer()
-
     await state.clear()
+    await safe_edit(call, WELCOME_TEXT, reply_markup=main_menu(), parse_mode="Markdown")
 
-    await safe_edit(
-        call,
-        WELCOME_TEXT,
-        reply_markup=main_menu(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# ADMIN PANEL
-# =========================================================
-
-@dp.message(F.text == "/admin")
+@dp.message(Command("admin"))
 async def admin_panel(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-
-    await message.answer(
-        """
-👑 *Paraweb Admin Panel*
-
-Choose option:
-""",
-        reply_markup=admin_keyboard(),
-        parse_mode="Markdown",
+    if not is_admin(message.from_user.id): return
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📩 View Leads", callback_data="admin_leads")],
+            [InlineKeyboardButton(text="👥 Users Count", callback_data="admin_users")],
+            [InlineKeyboardButton(text="📢 Broadcast", callback_data="broadcast")],
+            [InlineKeyboardButton(text="⬅️ Back", callback_data="back")]
+        ]
     )
-
-
-# =========================================================
-# USERS COUNT
-# =========================================================
+    await message.answer("👑 *Paraweb Admin Panel*", reply_markup=markup, parse_mode="Markdown")
 
 @dp.callback_query(F.data == "admin_users")
 async def users_count(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer()
-        return
-
+    if not is_admin(call.from_user.id): return
     await call.answer()
-
     try:
         db = connect()
         cursor = db.cursor()
-
-        cursor.execute(
-            "SELECT COUNT(*) FROM users"
-        )
-
+        cursor.execute("SELECT COUNT(*) FROM users")
         count = cursor.fetchone()[0]
-
         db.close()
-
-        await safe_edit(
-            call,
-            f"""
-👥 *Total Users:*
-
-{count}
-""",
-            reply_markup=admin_keyboard(),
-            parse_mode="Markdown",
-        )
-
-    except Exception as e:
-        print(f"Users count error: {e}")
-
-        await call.message.answer(
-            "❌ Could not load user count."
-        )
-
-
-# =========================================================
-# SHOW LEADS
-# =========================================================
+        await safe_edit(call, f"👥 *Total Users:* {count}", reply_markup=back_button(), parse_mode="Markdown")
+    except Exception as e: print(f"Users count error: {e}")
 
 @dp.callback_query(F.data == "admin_leads")
 async def show_leads(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer()
-        return
-
+    if not is_admin(call.from_user.id): return
     await call.answer()
-
-    try:
-        leads = get_leads()
-    except Exception as e:
-        print(f"Get leads error: {e}")
-
-        await call.message.answer(
-            "❌ Could not load leads."
-        )
-
-        return
-
+    leads = get_leads()
     if not leads:
-        await safe_edit(
-            call,
-            "📭 No leads found.",
-            reply_markup=admin_keyboard(),
-        )
+        await safe_edit(call, "📭 No leads found.", reply_markup=back_button())
         return
-
-    await safe_edit(
-        call,
-        f"📩 *Total Leads:* {len(leads)}\n\nShowing latest 10.",
-        reply_markup=admin_keyboard(),
-        parse_mode="Markdown",
-    )
-
     for lead in leads[:10]:
-
-        text = f"""
-🔥 *LEAD #{lead[0]}*
-
-👤 User ID:
-{lead[1]}
-
-🌐 Service:
-{lead[2]}
-
-🏢 Business:
-{lead[3]}
-
-⚙️ Features:
-{lead[4]}
-
-💰 Budget:
-{lead[5]}
-
-📝 Requirement:
-{lead[6]}
-
-📞 Contact:
-{lead[7]}
-
-📌 Status:
-{lead[8]}
-"""
-
-        try:
-            await call.message.answer(
-                text,
-                reply_markup=status_keyboard(lead[0]),
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            print(f"Lead display error: {e}")
-
-
-# =========================================================
-# STATUS UPDATE
-# =========================================================
-
-@dp.callback_query(F.data.startswith("status_"))
-async def change_status(call: CallbackQuery):
-    if not is_admin(call.from_user.id):
-        await call.answer()
-        return
-
-    parts = call.data.split("_", 2)
-
-    if len(parts) != 3:
-        await call.answer(
-            "Invalid status.",
-            show_alert=True,
-        )
-        return
-
-    status = parts[1].upper()
-    lead_id = parts[2]
-
-    allowed_statuses = {
-        "CONTACTED",
-        "WORKING",
-        "HOLD",
-        "CANCELLED",
-        "DONE",
-    }
-
-    if status not in allowed_statuses:
-        await call.answer(
-            "Invalid status.",
-            show_alert=True,
-        )
-        return
-
-    try:
-        update_status(
-            lead_id,
-            status,
-        )
-    except Exception as e:
-        print(f"Status update error: {e}")
-
-        await call.answer(
-            "Update failed.",
-            show_alert=True,
-        )
-        return
-
-    await call.answer(
-        "Status Updated ✅"
-    )
-
-    # Find user
-    user = None
-
-    try:
-        db = connect()
-        cursor = db.cursor()
-
-        cursor.execute(
-            """
-            SELECT user_id
-            FROM leads
-            WHERE id=?
-            """,
-            (lead_id,),
-        )
-
-        user = cursor.fetchone()
-
-        db.close()
-
-    except Exception as e:
-        print(f"Find user error: {e}")
-
-    messages = {
-        "CONTACTED": """
-📞 *Paraweb Update*
-
-Your project discussion has started.
-
-Our team will contact you soon 🚀
-""",
-        "WORKING": """
-⚙️ *Paraweb Update*
-
-Your project development has started 🔥
-
-We are working on your idea.
-""",
-        "HOLD": """
-⏸️ *Paraweb Update*
-
-Your project is currently on hold.
-
-Our team will update you soon.
-""",
-        "CANCELLED": """
-❌ *Paraweb Update*
-
-Your project has been cancelled.
-
-Please contact our team if you have any questions.
-""",
-        "DONE": """
-🎉 *Paraweb Update*
-
-Your project has been completed.
-
-Thank you for choosing Paraweb 🚀
-""",
-    }
-
-    if user:
-        try:
-            await bot.send_message(
-                user[0],
-                messages.get(
-                    status,
-                    "Your project status has been updated.",
-                ),
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            print(f"User status notification error: {e}")
-
-    await call.message.answer(
-        f"""
-✅ *Lead Updated*
-
-ID:
-{lead_id}
-
-Status:
-{status}
-""",
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# BROADCAST
-# =========================================================
-
-@dp.callback_query(F.data == "broadcast")
-async def broadcast_start(
-    call: CallbackQuery,
-    state: FSMContext,
-):
-    if not is_admin(call.from_user.id):
-        await call.answer()
-        return
-
-    await call.answer()
-
-    await state.set_state(
-        AdminForm.broadcast_message
-    )
-
-    await call.message.answer(
-        """
-📢 *Broadcast Mode*
-
-Send the message you want to send to all users.
-
-Send `/cancel` to cancel.
-""",
-        parse_mode="Markdown",
-    )
-
-
-@dp.message(AdminForm.broadcast_message)
-async def send_broadcast(
-    message: Message,
-    state: FSMContext,
-):
-    if not is_admin(message.from_user.id):
-        return
-
-    if message.text == "/cancel":
-        await state.clear()
-
-        await message.answer(
-            "❌ Broadcast cancelled."
-        )
-
-        return
-
-    if not message.text:
-        await message.answer(
-            "Please send a text message."
-        )
-        return
-
-    try:
-        users = get_users()
-    except Exception as e:
-        print(f"Get users error: {e}")
-
-        await message.answer(
-            "❌ Could not load users."
-        )
-
-        await state.clear()
-        return
-
-    sent = 0
-    failed = 0
-
-    status_message = await message.answer(
-        "📢 Broadcast starting..."
-    )
-
-    for user in users:
-
-        try:
-            await bot.send_message(
-                user[0],
-                message.text,
-            )
-
-            sent += 1
-
-            await asyncio.sleep(0.05)
-
-        except TelegramRetryAfter as e:
-            await asyncio.sleep(
-                e.retry_after
-            )
-
-            try:
-                await bot.send_message(
-                    user[0],
-                    message.text,
-                )
-
-                sent += 1
-
-            except Exception:
-                failed += 1
-
-        except Exception as e:
-            print(
-                f"Broadcast failed for {user[0]}: {e}"
-            )
-            failed += 1
-
-    try:
-        await status_message.edit_text(
-            f"""
-📢 *Broadcast Completed*
-
-✅ Sent:
-{sent}
-
-❌ Failed:
-{failed}
-
-👥 Total:
-{len(users)}
-""",
-            parse_mode="Markdown",
-        )
-    except Exception:
-        await message.answer(
-            f"Broadcast completed.\nSent: {sent}\nFailed: {failed}"
-        )
-
-    await state.clear()
-
-
-# =========================================================
-# MY PROJECT
-# =========================================================
+        await call.message.answer(f"🔥 *LEAD #{lead[0]}*\nUser ID: {lead[1]}\nService: {lead[2]}\nStatus: {lead[8]}", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "my_project")
 async def my_project(call: CallbackQuery):
     await call.answer()
-
-    try:
-        leads = get_user_leads(
-            call.from_user.id
-        )
-    except Exception as e:
-        print(f"User leads error: {e}")
-
-        await call.message.answer(
-            "❌ Could not load your projects."
-        )
-
-        return
-
+    leads = get_user_leads(call.from_user.id)
     if not leads:
-        await safe_edit(
-            call,
-            """
-📂 *No project found.*
-
-Start your first project with Paraweb 🚀
-""",
-            reply_markup=main_menu(),
-            parse_mode="Markdown",
-        )
+        await safe_edit(call, "📂 *No project found.*\nStart your first project with Paraweb 🚀", reply_markup=main_menu(), parse_mode="Markdown")
         return
-
-    # Show latest project
     lead = leads[0]
-
-    status = lead[8]
-
-    stages = {
-        "NEW": """
-🟦 Requirement Received
-⬜ Planning
-⬜ Development
-⬜ Testing
-⬜ Launch
-""",
-        "CONTACTED": """
-✅ Requirement Received
-🟦 Discussion Started
-⬜ Development
-⬜ Testing
-⬜ Launch
-""",
-        "WORKING": """
-✅ Requirement Received
-✅ Planning
-🟦 Development
-⬜ Testing
-⬜ Launch
-""",
-        "HOLD": """
-✅ Requirement Received
-⏸️ Project On Hold
-⬜ Development
-⬜ Testing
-⬜ Launch
-""",
-        "DONE": """
-✅ Requirement Received
-✅ Development
-✅ Testing
-🟦 Project Delivered 🚀
-""",
-        "CANCELLED": """
-✅ Requirement Received
-❌ Project Cancelled
-""",
-    }
-
-    await safe_edit(
-        call,
-        f"""
-🚀 *Paraweb Project Tracker*
-
-Project:
-{lead[2]}
-
-Status:
-
-{stages.get(
-    status,
-    stages["NEW"],
-)}
-
-Current Stage:
-*{status}*
-""",
-        reply_markup=main_menu(),
-        parse_mode="Markdown",
-    )
-
-
-# =========================================================
-# PAYMENT DONE
-# =========================================================
-
-@dp.callback_query(F.data == "payment_done")
-async def payment_done(call: CallbackQuery):
-    await call.answer()
-
-    await call.message.answer(
-        """
-✅ *Payment request received.*
-
-Our team will verify your payment shortly.
-
-Thank you ❤️
-""",
-        parse_mode="Markdown",
-    )
-
-    try:
-        username = (
-            f"@{call.from_user.username}"
-            if call.from_user.username
-            else "None"
-        )
-
-        await bot.send_message(
-            ADMIN_ID,
-            f"""
-💰 *PAYMENT REQUEST*
-
-👤 User:
-{call.from_user.full_name}
-
-🌐 Username:
-{username}
-
-🆔 User ID:
-{call.from_user.id}
-""",
-            parse_mode="Markdown",
-        )
-
-    except Exception as e:
-        print(
-            f"Payment admin notification error: {e}"
-        )
-
-
-# =========================================================
-# UNKNOWN MESSAGE
-# =========================================================
+    await safe_edit(call, f"🚀 *Paraweb Project Tracker*\n\nProject: {lead[2]}\nCurrent Status: *{lead[8]}*", reply_markup=main_menu(), parse_mode="Markdown")
 
 @dp.message()
 async def unknown(message: Message):
-
-    await message.answer(
-        """
-🤖 *I am Paraweb Assistant.*
-
-Please use the buttons below
-to continue your journey 🚀
-""",
-        reply_markup=main_menu(),
-        parse_mode="Markdown",
-    )
+    await message.answer("🤖 *I am Paraweb Assistant.*\nPlease use the buttons below to continue 🚀", reply_markup=main_menu(), parse_mode="Markdown")
 
 
 # =========================================================
-# MAIN
+# MAIN ENTRY POINT
 # =========================================================
 
 async def main():
+    # Database Initializations
+    init_main_db()
+    init_hosting_db()
 
-    init_db()
+    print("🚀 Paraweb Bot & Hosting Manager Started")
 
-    print("🚀 Paraweb Bot Started")
+    # Start Background Task for Expiry Checking
+    asyncio.create_task(hosting_expiry_checker())
 
+    # Start Bot Polling
     await dp.start_polling(bot)
-
-
-# =========================================================
-# RUN
-# =========================================================
 
 if __name__ == "__main__":
     keep_alive()
     asyncio.run(main())
-```
