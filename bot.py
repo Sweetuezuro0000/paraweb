@@ -612,13 +612,16 @@ async def admin_panel(message: Message):
     markup = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📩 View Leads", callback_data="admin_leads")],
-            [InlineKeyboardButton(text="👥 Users Count", callback_data="admin_users")],
+            [
+                InlineKeyboardButton(text="👥 Users Count", callback_data="admin_users"),
+                InlineKeyboardButton(text="🤖 Hosted Bots", callback_data="admin_bots") # <-- NEW BUTTON
+            ],
             [InlineKeyboardButton(text="📢 Broadcast", callback_data="broadcast")],
             [InlineKeyboardButton(text="⬅️ Back", callback_data="back")]
         ]
     )
     await message.answer("👑 *Paraweb Admin Panel*", reply_markup=markup, parse_mode="Markdown")
-
+    
 @dp.callback_query(F.data == "admin_users")
 async def users_count(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
@@ -656,6 +659,48 @@ async def my_project(call: CallbackQuery):
 @dp.message()
 async def unknown(message: Message):
     await message.answer("🤖 *I am Paraweb Assistant.*\nPlease use the buttons below to continue 🚀", reply_markup=main_menu(), parse_mode="Markdown")
+# Callback handler for '🤖 Hosted Bots' button
+@dp.callback_query(F.data == "admin_bots")
+async def show_all_hosted_bots(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    
+    conn = connect() # hosting.db ya main db connect karein
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, bot_name, expiry_date FROM user_bots")
+    bots = cursor.fetchall()
+    conn.close()
+
+    if not bots:
+        await safe_edit(call, "🤖 *Hosted Bots Status*\n\nAbhi koi bhi bot host nahi hua hai.", reply_markup=back_button(), parse_mode="Markdown")
+        return
+
+    text = f"🤖 *Total Hosted Bots:* `{len(bots)}`\n\n"
+    for b in bots:
+        text += f"• *Bot:* `{b[1]}` | *User ID:* `{b[0]}`\n  *Expiry:* `{b[2][:10]}`\n\n"
+
+    await safe_edit(call, text, reply_markup=back_button(), parse_mode="Markdown")
+
+# Admin Command: Directly view all bots via /allbots
+@dp.message(Command("allbots"))
+async def command_all_bots(message: Message):
+    if not is_admin(message.from_user.id): return
+    
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, bot_name, expiry_date FROM user_bots")
+    bots = cursor.fetchall()
+    conn.close()
+
+    if not bots:
+        await message.answer("📭 Abhi koi bhi bot host nahi hai.")
+        return
+
+    msg = f"📊 *Total Hosted Bots:* `{len(bots)}`\n\n"
+    for b in bots:
+        msg += f"• `{b[1]}` | User: `{b[0]}` | Expires: `{b[2][:10]}`\n"
+        
+    await message.answer(msg, parse_mode="Markdown")
 
 
 # =========================================================
