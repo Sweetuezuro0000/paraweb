@@ -23,7 +23,8 @@ def init_db():
         db.execute("CREATE TABLE IF NOT EXISTS users (user_id INT PRIMARY KEY, name TEXT)")
         print("✅ Turso Database Connected Successfully!")
     except Exception as e:
-        print(f"❌ Database Connection Error: {e}")from threading import Thread
+        print(f"❌ Database Connection Error: {e}")
+from threading import Thread
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
