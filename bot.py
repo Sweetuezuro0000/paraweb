@@ -17,7 +17,12 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    FSInputFile,
 )
+
+# Custom Local Modules (Restored)
+from pdf_generator import generate_pdf
+from payment import send_payment
 
 from database import (
     init_db as init_main_db,
@@ -37,6 +42,7 @@ from hosting_manager import (
     get_user_bots,
 )
 
+
 # =========================================================
 # CONFIG
 # =========================================================
@@ -47,7 +53,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID_RAW = os.getenv("ADMIN_ID")
 
 if not TOKEN or not ADMIN_ID_RAW:
-    raise ValueError("BOT_TOKEN ya ADMIN_ID missing hai!")
+    raise ValueError("BOT_TOKEN ya ADMIN_ID env me missing hai!")
 
 try:
     ADMIN_ID = int(ADMIN_ID_RAW)
@@ -58,7 +64,7 @@ BRAND = "Paraweb"
 
 
 # =========================================================
-# FLASK SERVER
+# FLASK SERVER (RENDER KEEP ALIVE)
 # =========================================================
 
 app = Flask(__name__)
@@ -131,7 +137,7 @@ def admin_keyboard():
                 InlineKeyboardButton(text="🤖 Hosted Bots", callback_data="admin_bots_list")
             ],
             [InlineKeyboardButton(text="📢 Send Broadcast", callback_data="admin_broadcast")],
-            [InlineKeyboardButton(text="⬅️ Back to Main Menu", callback_data="back_to_main")]
+            [InlineKeyboardButton(text="⬅️ Main Menu", callback_data="back_to_main")]
         ]
     )
 
@@ -140,13 +146,12 @@ def back_admin():
         inline_keyboard=[[InlineKeyboardButton(text="⬅️ Back to Admin Panel", callback_data="admin_panel_open")]]
     )
 
-
 def is_admin(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
 async def safe_edit(call: CallbackQuery, text: str, reply_markup=None, parse_mode="Markdown"):
     try:
-        await call.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await call.message.edit_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except TelegramBadRequest:
         pass
 
@@ -158,12 +163,12 @@ async def safe_edit(call: CallbackQuery, text: str, reply_markup=None, parse_mod
 @dp.message(CommandStart())
 async def start(message: Message):
     save_user(message.from_user.id, message.from_user.username, message.from_user.first_name)
-    text = f"🚀 *Welcome to {BRAND}*\n\nWe design & develop Websites, Mobile Apps, and Telegram Bots.\n\nSelect an option to get started 👇"
+    text = f"🚀 *Welcome to {BRAND}*\n\nWe design & develop Websites, Mobile Apps, and Telegram Bots.\nSelect an option to start 👇"
     await message.answer(text, reply_markup=main_menu(), parse_mode="Markdown")
 
 
 # =========================================================
-# PROJECT FORM & AUTOMATED QUOTATION FLOW
+# PROJECT FORM, PDF GENERATION & PAYMENT FLOW
 # =========================================================
 
 @dp.callback_query(F.data.in_({"proj_start_all", "proj_website", "proj_app", "proj_bot"}))
@@ -191,25 +196,25 @@ async def start_project_flow(call: CallbackQuery, state: FSMContext):
 async def process_business(message: Message, state: FSMContext):
     await state.update_data(business=message.text)
     await state.set_state(ProjectForm.features)
-    await message.answer("💡 *Step 2/5:* Aapko kya-kya main features chahiye? (Short details likhein)")
+    await message.answer("💡 *Step 2/5:* Features detail me likhein jo aapko chahiye:")
 
 @dp.message(ProjectForm.features)
 async def process_features(message: Message, state: FSMContext):
     await state.update_data(features=message.text)
     await state.set_state(ProjectForm.budget)
-    await message.answer("💰 *Step 3/5:* Aapka expected budget kitna hai? (e.g. ₹2000 - ₹5000 / $50 - $100)")
+    await message.answer("💰 *Step 3/5:* Expected Budget (e.g. ₹2000 - ₹5000 / $50):")
 
 @dp.message(ProjectForm.budget)
 async def process_budget(message: Message, state: FSMContext):
     await state.update_data(budget=message.text)
     await state.set_state(ProjectForm.requirement)
-    await message.answer("📝 *Step 4/5:* Koi aur specific requirement ya timeline?")
+    await message.answer("📝 *Step 4/5:* Specific timeline ya extra requirements:")
 
 @dp.message(ProjectForm.requirement)
 async def process_req(message: Message, state: FSMContext):
     await state.update_data(requirement=message.text)
     await state.set_state(ProjectForm.contact)
-    await message.answer("📞 *Step 5/5:* Aapka Contact Number ya WhatsApp Number kya hai?")
+    await message.answer("📞 *Step 5/5:* Aapka Contact / WhatsApp Number:")
 
 @dp.message(ProjectForm.contact)
 async def process_contact(message: Message, state: FSMContext):
@@ -219,7 +224,7 @@ async def process_contact(message: Message, state: FSMContext):
     contact = message.text
     u_id = message.from_user.id
     
-    # Save Lead in Database
+    # 1. Save Lead in Database
     save_lead(
         user_id=u_id,
         service=data.get("service"),
@@ -230,29 +235,46 @@ async def process_contact(message: Message, state: FSMContext):
         contact=contact
     )
 
-    # Generate Instant Quotation Summary
-    quotation_text = (
-        f"📄 *PARAWEB OFFICIAL QUOTATION*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"• *Service:* {data.get('service')}\n"
-        f"• *Business:* {data.get('business')}\n"
-        f"• *Budget Range:* {data.get('budget')}\n"
-        f"• *Contact:* `{contact}`\n"
-        f"• *Status:* 🟡 Quotation Generated / Pending Review\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"✅ *Next Steps:* Project confirm karne ke liye payment karein aur niche button se *Payment Proof* submit karein."
-    )
+    await message.answer("🔄 *Generating Official PDF Quotation... Please wait.*", parse_mode="Markdown")
 
-    pay_kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Submit Payment Proof", callback_data="user_paid")],
-            [InlineKeyboardButton(text="🚀 Return to Main Menu", callback_data="back_to_main")]
-        ]
-    )
+    # 2. Generate PDF Quotation
+    lead_info = {
+        "user_id": u_id,
+        "service": data.get("service"),
+        "business": data.get("business"),
+        "features": data.get("features"),
+        "budget": data.get("budget"),
+        "requirement": data.get("requirement"),
+        "contact": contact,
+        "name": message.from_user.first_name
+    }
 
-    await message.answer(quotation_text, reply_markup=pay_kb, parse_mode="Markdown")
-    
-    # Notify Admin About New Lead
+    try:
+        pdf_path = generate_pdf(lead_info)
+        await message.answer_document(
+            FSInputFile(pdf_path),
+            caption=f"📄 *Here is your official {BRAND} Project Quotation PDF!*"
+        )
+    except Exception as e:
+        print(f"PDF Generation Error: {e}")
+        await message.answer("📄 *Quotation Details Saved Successfully!*")
+
+    # 3. Call Payment Module to Send Payment / UPI Details
+    try:
+        await send_payment(message, data.get("budget"))
+    except Exception as e:
+        print(f"Payment Module Error: {e}")
+        pay_msg = (
+            f"💳 *PAYMENT INSTRUCTIONS*\n\n"
+            f"Aap apne project ki advance payment karke niche button se screenshot bhej sakte hain."
+        )
+        await message.answer(
+            pay_msg,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💳 Submit Payment Proof", callback_data="user_paid")]]),
+            parse_mode="Markdown"
+        )
+
+    # 4. Notify Admin
     try:
         admin_alert = f"🚨 *NEW LEAD RECEIVED!*\n\n• *Service:* {data.get('service')}\n• *User ID:* `{u_id}`\n• *Contact:* `{contact}`"
         await bot.send_message(ADMIN_ID, admin_alert, parse_mode="Markdown")
@@ -270,7 +292,7 @@ async def user_paid_click(call: CallbackQuery, state: FSMContext):
     await state.set_state(PaymentForm.waiting_for_proof)
     await safe_edit(
         call,
-        "💳 *Submit Payment Proof*\n\nAapne jo payment ki hai uski Screenshot ya Transaction ID/UTR Number chat me bhejein:",
+        "💳 *Submit Payment Proof*\n\nAapne jo payment ki hai uski Screenshot ya UTR/Txn ID yahan chat me bhej dein:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Cancel", callback_data="back_to_main")]])
     )
 
@@ -285,7 +307,7 @@ async def receive_payment_proof(message: Message, state: FSMContext):
         f"• *User:* {user.first_name}\n"
         f"• *User ID:* `{user.id}`\n"
         f"• *Username:* {username}\n\n"
-        f"Quick Action Commands:\n"
+        f"Quick Commands:\n"
         f"`/addbot {user.id} BotName 30`\n"
         f"`/extend {user.id} BotName 30`"
     )
@@ -293,9 +315,9 @@ async def receive_payment_proof(message: Message, state: FSMContext):
     if message.photo:
         await bot.send_photo(ADMIN_ID, photo=message.photo[-1].file_id, caption=admin_alert, parse_mode="Markdown")
     else:
-        await bot.send_message(ADMIN_ID, f"{admin_alert}\n\n*Details:* {message.text}", parse_mode="Markdown")
+        await bot.send_message(ADMIN_ID, f"{admin_alert}\n\n*Proof Text:* {message.text}", parse_mode="Markdown")
 
-    await message.answer("✅ *Payment Proof Received!*\n\nAdmin 10-15 mins me review karke aapki service/bot activate kar dega.", reply_markup=main_menu())
+    await message.answer("✅ *Payment Proof Received!*\n\nAdmin review karke service start kar dega.", reply_markup=main_menu())
 
 
 # =========================================================
@@ -314,36 +336,28 @@ async def admin_panel_cb(call: CallbackQuery, state: FSMContext):
     await safe_edit(call, "👑 *Paraweb Admin Panel*", reply_markup=admin_keyboard())
 
 
-# --- USERS DETAIL FIX ---
+# --- USERS LIST FIX ---
 
 @dp.callback_query(F.data == "admin_users_list")
 async def admin_users_list(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
     await call.answer()
 
-    try:
-        conn = connect()
-        cursor = conn.cursor()
-        cursor.execute("SELECT user_id, username, first_name FROM users ORDER BY id DESC")
-        users = cursor.fetchall()
-        conn.close()
-    except Exception as e:
-        users = []
-
+    users = get_users()
     if not users:
-        await safe_edit(call, "👥 Database me abhi koi user saved nahi hai.", reply_markup=back_admin())
+        await safe_edit(call, "👥 Database me koi user saved nahi hai.", reply_markup=back_admin())
         return
 
     text = f"👥 *Total Registered Users:* `{len(users)}`\n\n*Recent Users List:*\n"
-    for u in users[:15]:
-        u_id, username, fname = u
+    for u in users[-15:]:
+        u_id, username, fname = u[0], u[1], u[2]
         uname_text = f"@{username}" if username else "No Username"
         text += f"• {fname} | `{u_id}` | {uname_text}\n"
 
     await safe_edit(call, text, reply_markup=back_admin())
 
 
-# --- LEADS SEARCH & MANAGEMENT ---
+# --- LEADS LIST & SEARCH BY ID ---
 
 @dp.callback_query(F.data == "admin_leads_list")
 async def admin_leads_list(call: CallbackQuery):
@@ -382,7 +396,7 @@ async def process_lead_search(message: Message, state: FSMContext):
     await state.clear()
     
     if not message.text.isdigit():
-        await message.answer("❌ Direct numeric Lead ID bhejein.", reply_markup=back_admin())
+        await message.answer("❌ Numeric Lead ID bhejein.", reply_markup=back_admin())
         return
 
     lead_id = int(message.text)
@@ -394,6 +408,53 @@ async def process_lead_search(message: Message, state: FSMContext):
 
     if not lead:
         await message.answer(f"❌ Lead #{lead_id} nahi mili!", reply_markup=back_admin())
+        return
+
+    _, u_id, service, bus, feat, budg, req, cont, status, created = lead
+
+    text = (
+        f"🔥 *LEAD DETAILS #{lead_id}*\n\n"
+        f"• *User ID:* `{u_id}`\n"
+        f"• *Service:* `{service}`\n"
+        f"• *Business:* `{bus}`\n"
+        f"• *Features:* `{feat}`\n"
+        f"• *Budget:* `{budg}`\n"
+        f"• *Contact:* `{cont}`\n"
+        f"• *Requirement:* {req}\n"
+        f"• *Status:* *{status}*\n"
+        f"• *Date:* `{created}`\n\n"
+        f"👇 *Update Status:* "
+    )
+
+    markup = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📞 Contacted", callback_data=f"set_st_{lead_id}_Contacted"),
+                InlineKeyboardButton(text="⚙️ Working", callback_data=f"set_st_{lead_id}_Working"),
+            ],
+            [
+                InlineKeyboardButton(text="✅ Done", callback_data=f"set_st_{lead_id}_Done"),
+                InlineKeyboardButton(text="❌ Cancelled", callback_data=f"set_st_{lead_id}_Cancelled"),
+            ],
+            [InlineKeyboardButton(text="⬅️ Back to Admin", callback_data="admin_panel_open")]
+        ]
+    )
+    await message.answer(text, reply_markup=markup, parse_mode="Markdown")
+
+@dp.callback_query(F.data.startswith("view_lead_"))
+async def view_lead_cb(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    lead_id = int(call.data.replace("view_lead_", ""))
+    
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+    lead = cursor.fetchone()
+    conn.close()
+
+    if not lead:
+        await call.answer("Lead nahi mili!", show_alert=True)
         return
 
     _, u_id, service, bus, feat, budg, req, cont, status, created = lead
@@ -424,7 +485,7 @@ async def process_lead_search(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="⬅️ Back to Admin", callback_data="admin_panel_open")]
         ]
     )
-    await message.answer(text, reply_markup=markup, parse_mode="Markdown")
+    await safe_edit(call, text, reply_markup=markup)
 
 @dp.callback_query(F.data.startswith("set_st_"))
 async def set_lead_status_cb(call: CallbackQuery):
@@ -473,7 +534,7 @@ async def start_broadcast(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id): return
     await call.answer()
     await state.set_state(AdminForm.broadcast_message)
-    await safe_edit(call, "📢 *Broadcast System*\n\nSend any message or photo to broadcast to all users.", reply_markup=back_admin())
+    await safe_edit(call, "📢 *Broadcast System*\n\nSend any text message or photo to broadcast to all users.", reply_markup=back_admin())
 
 @dp.message(AdminForm.broadcast_message)
 async def process_broadcast(message: Message, state: FSMContext):
@@ -498,7 +559,7 @@ async def process_broadcast(message: Message, state: FSMContext):
 
 
 # =========================================================
-# HOSTING COMMANDS (PLUS & MINUS DAYS SUPPORT)
+# HOSTING COMMANDS (ADD, EXTEND (+/-), SUBDAYS, DELBOT, GIFTALL)
 # =========================================================
 
 @dp.message(Command("addbot"))
@@ -518,12 +579,10 @@ async def admin_extend_bot(message: Message):
     try:
         args = message.text.split()[1:]
         user_id, bot_name, days = int(args[0]), args[1], int(args[2])
-        
-        # Extends or Reduces Days automatically based on + / - value
         success, msg = extend_user_bot(user_id, bot_name, days)
         await message.answer(msg, parse_mode="Markdown")
     except Exception:
-        await message.answer("⚠️ Format: `/extend <user_id> <bot_name> <days>`\n*(Tip: Days minus karne ke liye negative number dalein e.g. -5)*", parse_mode="Markdown")
+        await message.answer("⚠️ Format: `/extend <user_id> <bot_name> <days>`\n*(Negative days ke liye: e.g. -5)*", parse_mode="Markdown")
 
 @dp.message(Command("subdays"))
 async def admin_sub_days(message: Message):
@@ -531,11 +590,58 @@ async def admin_sub_days(message: Message):
     try:
         args = message.text.split()[1:]
         user_id, bot_name, days = int(args[0]), args[1], abs(int(args[2]))
-        # Deduct days
         success, msg = extend_user_bot(user_id, bot_name, -days)
-        await message.answer(f"📉 `{days}` Days deduct kar diye gaye hain!\n\n{msg}", parse_mode="Markdown")
+        await message.answer(f"📉 `{days}` Days deduct ho gaye hain!\n\n{msg}", parse_mode="Markdown")
     except Exception:
-        await message.answer("⚠️ Format: `/subdays <user_id> <bot_name> <days>`\nExample: `/subdays 987654321 ShopBot 5`", parse_mode="Markdown")
+        await message.answer("⚠️ Format: `/subdays <user_id> <bot_name> <days>`", parse_mode="Markdown")
+
+@dp.message(Command("delbot"))
+async def admin_del_bot(message: Message):
+    if not is_admin(message.from_user.id): return
+    try:
+        args = message.text.split()[1:]
+        user_id, bot_name = int(args[0]), args[1]
+
+        conn = sqlite3.connect("hosting.db")
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_bots WHERE user_id = ? AND bot_name = ?", (user_id, bot_name))
+        rows = cursor.rowcount
+        conn.commit()
+        conn.close()
+
+        if rows > 0:
+            await message.answer(f"🗑️ Bot `{bot_name}` delete ho gaya hai.", parse_mode="Markdown")
+        else:
+            await message.answer("❌ Bot nahi mila.", parse_mode="Markdown")
+    except Exception:
+        await message.answer("⚠️ Format: `/delbot <user_id> <bot_name>`", parse_mode="Markdown")
+
+@dp.message(Command("giftall"))
+async def admin_gift_all(message: Message):
+    if not is_admin(message.from_user.id): return
+    try:
+        bonus_days = int(message.text.split()[1])
+        conn = sqlite3.connect("hosting.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, bot_name, expiry_date FROM user_bots")
+        bots = cursor.fetchall()
+
+        now = datetime.now()
+        count = 0
+        for u_id, b_name, exp_str in bots:
+            try:
+                exp_dt = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
+                base_dt = exp_dt if exp_dt > now else now
+                new_exp = (base_dt + timedelta(days=bonus_days)).strftime("%Y-%m-%d %H:%M:%S")
+                cursor.execute("UPDATE user_bots SET expiry_date = ? WHERE user_id = ? AND bot_name = ?", (new_exp, u_id, b_name))
+                count += 1
+            except Exception: pass
+        conn.commit()
+        conn.close()
+
+        await message.answer(f"🎉 Total `{count}` bots me *+{bonus_days} Days* add ho gaye!", parse_mode="Markdown")
+    except Exception:
+        await message.answer("⚠️ Format: `/giftall <days>`", parse_mode="Markdown")
 
 @dp.message(Command("mybots"))
 @dp.message(Command("status"))
@@ -547,7 +653,7 @@ async def check_user_bots_handler(event):
 
     bots = get_user_bots(user_id)
     if not bots:
-        await bot.send_message(chat_id, "❌ Aapka koi hosted bot active nahi hai.")
+        await bot.send_message(chat_id, "❌ Aapka koi bot active nahi hai.")
         return
 
     for b in bots:
@@ -562,11 +668,10 @@ async def my_projects_cb(call: CallbackQuery):
     await call.answer()
     leads = get_user_leads(call.from_user.id)
     if not leads:
-        await safe_edit(call, "📭 Aapka koi active project inquiry nahi mili.", reply_markup=main_menu())
+        await safe_edit(call, "📭 Aapka koi active project nahi hai.", reply_markup=main_menu())
         return
-    
     lead = leads[0]
-    await safe_edit(call, f"📊 *Your Project Status*\n\n• *Service:* {lead[2]}\n• *Status:* *{lead[8]}*", reply_markup=main_menu())
+    await safe_edit(call, f"📊 *Your Project Status*\n\n• Service: *{lead[2]}*\n• Status: *{lead[8]}*", reply_markup=main_menu())
 
 @dp.callback_query(F.data == "back_to_main")
 async def back_to_main_cb(call: CallbackQuery, state: FSMContext):
@@ -582,7 +687,7 @@ async def back_to_main_cb(call: CallbackQuery, state: FSMContext):
 async def main():
     init_main_db()
     init_hosting_db()
-    print("🚀 Paraweb Full Fixed Bot Running...")
+    print("🚀 Paraweb Full Integrated Bot Running...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
