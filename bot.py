@@ -3,6 +3,7 @@ import csv
 import asyncio
 import random
 import sqlite3
+import qrcode
 from datetime import datetime, timedelta
 from threading import Thread
 from flask import Flask
@@ -40,7 +41,15 @@ try:
     HAS_TURSO = True
 except ImportError:
     HAS_TURSO = False
+from zoneinfo import ZoneInfo
+IST = ZoneInfo("Asia/Kolkata")
 
+def now_ist():
+    return datetime.now(IST)
+def calculate_expiry(days):
+    today_midnight = now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
+    expiry = today_midnight + timedelta(days=days)
+    return expiry
 # ===============================
 # 1. CONFIG & FLASK KEEP-ALIVE
 # ===============================
@@ -229,8 +238,8 @@ def extend_hosted_bot(bot_id, add_days):
     try:
         current_expiry = datetime.strptime(row[0], "%Y-%m-%d %H:%M")
     except Exception:
-        current_expiry = datetime.now()
-    base = current_expiry if current_expiry > datetime.now() else datetime.now()
+        current_expiry = now_ist()
+    base = current_expiry if current_expiry > now_ist() else now_ist()
     new_expiry = base + timedelta(days=add_days)
     new_expiry_str = new_expiry.strftime("%Y-%m-%d %H:%M")
     db_execute(
@@ -241,7 +250,7 @@ def extend_hosted_bot(bot_id, add_days):
 
 # --- HOSTING ORDERS (payment flow) ---
 def create_hosting_order(user_id, bot_name, plan_days, amount, order_type, target_bot_id=None):
-    order_id = f"{user_id}_{int(datetime.now().timestamp())}"
+    order_id = f"{user_id}_{int(now_ist().timestamp())}"
     db_execute(
         "INSERT INTO hosting_orders (id, user_id, bot_name, plan_days, amount, order_type, target_bot_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')",
         [order_id, user_id, bot_name, plan_days, amount, order_type, target_bot_id]
@@ -281,7 +290,7 @@ def get_chat_target(admin_msg_id):
 # ===============================
 def generate_pdf(data):
     os.makedirs("quotations", exist_ok=True)
-    quotation_id = datetime.now().strftime("PW-%Y%m%d-%H%M%S")
+    quotation_id = now_ist().strftime("PW-%Y%m%d-%H%M%S")
     filename = f"quotations/{quotation_id}.pdf"
 
     doc = SimpleDocTemplate(filename)
@@ -300,7 +309,7 @@ def generate_pdf(data):
     story.append(Paragraph("PARAWEB PROJECT QUOTATION", title))
     story.append(Spacer(1, 20))
     story.append(Paragraph(f"<b>Quotation ID:</b> {quotation_id}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Date:</b> {now_ist().strftime('%d-%m-%Y %H:%M')}", styles["Normal"]))
     story.append(Spacer(1, 15))
 
     features = data.get("features", [])
@@ -367,29 +376,29 @@ def generate_upi_link(amount, note):
     return f"upi://pay?pa={UPI_ID}&pn=Paraweb&am={amount}&cu=INR&tn={safe_note}"
 
 async def send_payment_request(chat_id, order_id, amount, note):
-    """Sends a hosting payment request with a UPI deep-link button + 'I Have Paid' button.
-    Falls back to no link-button if Telegram rejects the custom upi:// scheme."""
     upi_link = generate_upi_link(amount, note)
     text = (
         f"💳 **Payment Request**\n\n"
         f"Amount: ₹{amount}\n"
         f"UPI ID: `{UPI_ID}`\n\n"
-        f"Neeche button se pay kare ya UPI app me manually ID daal kar ₹{amount} bhejein.\n"
-        f"Payment ke baad '✅ I Have Paid' dabaye."
+        f"Pay ₹{amount} by scanning QR or manually entering ID in the UPI app.\n"
+        f"Click on '✅ I Have Paid' after payment."
     )
-    try:
-        keyboard_with_link = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Pay via UPI App", url=upi_link)],
-            [InlineKeyboardButton(text="✅ I Have Paid", callback_data=f"paid_order_{order_id}")]
-        ])
-        await bot.send_message(chat_id, text, reply_markup=keyboard_with_link, parse_mode="Markdown")
-    except Exception as e:
-        print(f"UPI link button failed ({e}), sending fallback without link button.")
-        fallback_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ I Have Paid", callback_data=f"paid_order_{order_id}")]
-        ])
-        await bot.send_message(chat_id, text, reply_markup=fallback_keyboard, parse_mode="Markdown")
+    os.makedirs("qr_codes", exist_ok=True)
+    qr_path = f"qr_codes/{order_id}.png"
+    qr_img = qrcode.make(upi_link)
+    qr_img.save(qr_path)
 
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ I Have Paid", callback_data=f"paid_order_{order_id}")]
+    ])
+    await bot.send_photo(
+        chat_id,
+        FSInputFile(qr_path),
+        caption=text,
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
 # ===============================
 # 4. BOT SETUP & KEYBOARDS
 # ===============================
@@ -569,7 +578,7 @@ async def show_user_hosted_bots(user_id, send_func):
         # b: (id, user_id, bot_name, days, start_date, expiry_date, status, reminder_1day_sent, reminder_2hr_sent)
         try:
             exp_date = datetime.strptime(b[5], "%Y-%m-%d %H:%M")
-            rem_days = (exp_date - datetime.now()).days
+            rem_days = (exp_date - now_ist()).days
             status_str = f"🟢 Active ({rem_days} Days Remaining)" if (rem_days >= 0 and b[6] == "ACTIVE") else "🔴 Expired"
         except Exception:
             status_str = "🟢 Active"
@@ -874,7 +883,7 @@ async def hosting_approve(call: CallbackQuery):
         return
 
     if order_type == "NEW":
-        start_dt = datetime.now()
+        start_dt = now_ist()
         expiry_dt = start_dt + timedelta(days=plan_days)
         add_hosted_bot(user_id, bot_name, plan_days, start_dt.strftime("%Y-%m-%d %H:%M"), expiry_dt.strftime("%Y-%m-%d %H:%M"))
         user_text = f"🎉 **Hosting Activated!**\n\n🤖 Bot: {bot_name}\n⏳ Valid: {plan_days} Days\n📅 Expiry: {expiry_dt.strftime('%Y-%m-%d %H:%M')}"
@@ -1012,7 +1021,7 @@ async def add_bot_cmd(message: Message):
         bot_name = args[1]
         days = int(args[2])
 
-        start_dt = datetime.now()
+        start_dt = now_ist()
         expiry_dt = start_dt + timedelta(days=days)
 
         start_str = start_dt.strftime("%Y-%m-%d %H:%M")
@@ -1084,7 +1093,7 @@ async def all_bots_cmd(event: Message | CallbackQuery):
     for b in bots:
         try:
             exp_date = datetime.strptime(b[5], "%Y-%m-%d %H:%M")
-            rem_days = (exp_date - datetime.now()).days
+            rem_days = (exp_date - now_ist()).days
             status_emoji = "🟢" if (rem_days >= 0 and b[6] == "ACTIVE") else "🔴"
         except Exception:
             rem_days = 0
@@ -1111,7 +1120,7 @@ async def hosting_overview_cmd(event: Message | CallbackQuery):
         target_msg = event
 
     bots = get_all_hosted_bots()
-    now = datetime.now()
+    now = now_ist()
     active = expiring_soon = expired = 0
 
     for b in bots:
@@ -1250,7 +1259,7 @@ async def export_leads_cmd(event: Message | CallbackQuery):
         return
 
     os.makedirs("exports", exist_ok=True)
-    filename = f"exports/leads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"exports/leads_{now_ist().strftime('%Y%m%d_%H%M%S')}.csv"
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["ID", "User ID", "Service", "Business", "Features", "Budget", "Requirement", "Contact", "Status", "Priority"])
@@ -1374,7 +1383,7 @@ async def admin_reply_forward(message: Message):
 # ===============================
 async def check_hosting_reminders():
     bots = get_all_hosted_bots()
-    now = datetime.now()
+    now = now_ist()
 
     for b in bots:
         # b: (id, user_id, bot_name, days, start_date, expiry_date, status, reminder_1day_sent, reminder_2hr_sent)
