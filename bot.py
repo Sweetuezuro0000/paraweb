@@ -7,17 +7,23 @@ import libsql_client
 TURSO_URL = os.getenv("TURSO_DB_URL")
 TURSO_TOKEN = os.getenv("TURSO_DB_TOKEN")
 
-# Connect to Cloud SQLite
+# Ensure URL uses https for REST protocol
+if TURSO_URL and TURSO_URL.startswith("libsql://"):
+    TURSO_URL = TURSO_URL.replace("libsql://", "https://")
+
 def get_db():
     return libsql_client.create_client_sync(
         url=TURSO_URL,
         auth_token=TURSO_TOKEN
     )
 
-# Example Query Executing:
-db = get_db()
-db.execute("CREATE TABLE IF NOT EXISTS users (user_id INT PRIMARY KEY, name TEXT)")
-from threading import Thread
+def init_db():
+    try:
+        db = get_db()
+        db.execute("CREATE TABLE IF NOT EXISTS users (user_id INT PRIMARY KEY, name TEXT)")
+        print("✅ Turso Database Connected Successfully!")
+    except Exception as e:
+        print(f"❌ Database Connection Error: {e}")from threading import Thread
 from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
