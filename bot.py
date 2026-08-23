@@ -20,7 +20,6 @@ from aiogram.types import (
     KeyboardButton,
     FSInputFile
 )
-from aiogram.exceptions import TelegramBadRequest
 
 # Try importing Turso client, fallback to SQLite if not present
 try:
@@ -37,11 +36,11 @@ load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "-1004463199472"))
-TURSO_URL = os.getenv("TURSO_DB_URL")
-TURSO_TOKEN = os.getenv("TURSO_DB_TOKEN")
+TURSO_URL = os.getenv("TURSO_DB_URL", "").strip()
+TURSO_TOKEN = os.getenv("TURSO_DB_TOKEN", "").strip()
 
 if not TOKEN:
-    raise ValueError("BOT_TOKEN missing in .env")
+    raise ValueError("BOT_TOKEN missing in environment variables")
 
 app = Flask('')
 
@@ -60,14 +59,21 @@ def keep_alive():
 keep_alive()
 
 # ===============================
-# 2. HYBRID DATABASE ENGINE (TURSO + SQLITE FALLBACK)
+# 2. HYBRID DATABASE ENGINE (CRASH-PROOF TURSO + SQLITE FALLBACK)
 # ===============================
 DB_FILE = "paraweb.db"
 
 def get_turso_client():
     if HAS_TURSO and TURSO_URL and TURSO_TOKEN:
-        url = TURSO_URL.replace("libsql://", "https://") if TURSO_URL.startswith("libsql://") else TURSO_URL
-        return libsql_client.create_client_sync(url=url, auth_token=TURSO_TOKEN)
+        try:
+            url = TURSO_URL
+            if not url.startswith(("libsql://", "https://", "http://", "file:")):
+                url = f"https://{url}"
+            url = url.replace("libsql://", "https://")
+            return libsql_client.create_client_sync(url=url, auth_token=TURSO_TOKEN)
+        except Exception as e:
+            print(f"⚠️ Turso connection failed ({e}). Defaulting to SQLite.")
+            return None
     return None
 
 def init_db():
@@ -270,7 +276,6 @@ class ProjectForm(StatesGroup):
 class AdminForm(StatesGroup):
     broadcast_message = State()
 
-# Persistent Main Menu (Reply Keyboard) - NO Payment Button
 def main_menu_reply():
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -281,7 +286,6 @@ def main_menu_reply():
         resize_keyboard=True
     )
 
-# Inline Keyboards for Flow Steps
 def service_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -379,7 +383,6 @@ async def start(message: Message):
     except Exception as e:
         print(f"Log channel error: {e}")
 
-# Trigger Flow via Reply Button or Callback
 @dp.message(F.text == "🚀 Start Project")
 async def start_project_btn(message: Message):
     await typing(message)
@@ -390,7 +393,6 @@ async def project_start_cb(call: CallbackQuery):
     await call.answer()
     await call.message.edit_text("🔥 *Project Assistant Activated*\n\nChoose what you want to build:", reply_markup=service_keyboard(), parse_mode="Markdown")
 
-# Service Selection
 @dp.callback_query(F.data.startswith("service_"))
 async def service_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
@@ -410,7 +412,6 @@ async def service_select(call: CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
 
-# Business Selection
 @dp.callback_query(F.data.startswith("business_"))
 async def business_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
@@ -424,7 +425,6 @@ async def business_select(call: CallbackQuery, state: FSMContext):
         parse_mode="Markdown"
     )
 
-# Features Selection (Inline Multiple Selection)
 @dp.callback_query(F.data.startswith("feature_"))
 async def feature_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
@@ -445,7 +445,6 @@ async def feature_select(call: CallbackQuery, state: FSMContext):
         await state.update_data(features=features)
         await call.message.answer(f"✅ Feature Added: {feature.capitalize()}")
 
-# Budget Selection
 @dp.callback_query(F.data.startswith("budget_"))
 async def budget_select(call: CallbackQuery, state: FSMContext):
     await call.answer()
@@ -457,7 +456,6 @@ async def budget_select(call: CallbackQuery, state: FSMContext):
         "📝 **Project Description**\n\nPlease send us a message describing your requirement:\n• Your core idea\n• Required pages\n• Reference links (if any)"
     )
 
-# Requirement Input
 @dp.message(ProjectForm.requirement)
 async def requirement_save(message: Message, state: FSMContext):
     await state.update_data(requirement=message.text)
@@ -465,7 +463,6 @@ async def requirement_save(message: Message, state: FSMContext):
 
     await message.answer("📞 **Almost Done!**\n\nPlease share your Contact Number or Telegram Username:")
 
-# Final Contact & Summary Submission
 @dp.message(ProjectForm.contact)
 async def contact_save(message: Message, state: FSMContext):
     await state.update_data(contact=message.text)
@@ -574,7 +571,6 @@ async def my_project_btn(message: Message):
 async def support_info(message: Message):
     await message.answer("📞 **Paraweb Support**\n\nFor direct assistance, reach out to our team:\nTelegram: @ParawebAdmin", parse_mode="Markdown")
 
-# Admin Functions
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
     if not is_admin(message.from_user.id):
