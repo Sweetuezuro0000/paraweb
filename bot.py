@@ -1,6 +1,22 @@
 import asyncio
 import os
 import sqlite3
+import os
+import libsql_client
+
+TURSO_URL = os.getenv("TURSO_DB_URL")
+TURSO_TOKEN = os.getenv("TURSO_DB_TOKEN")
+
+# Connect to Cloud SQLite
+def get_db():
+    return libsql_client.create_client_sync(
+        url=TURSO_URL,
+        auth_token=TURSO_TOKEN
+    )
+
+# Example Query Executing:
+db = get_db()
+db.execute("CREATE TABLE IF NOT EXISTS users (user_id INT PRIMARY KEY, name TEXT)")
 from threading import Thread
 from datetime import datetime, timedelta
 
