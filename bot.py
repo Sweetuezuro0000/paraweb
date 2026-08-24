@@ -187,7 +187,7 @@ def save_lead(user_id, data):
     db_execute(
         "INSERT INTO leads (user_id, service, business, features, budget, requirement, contact, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW', 'NORMAL')",
         [user_id, data.get('service', 'N/A'), data.get('business', 'N/A'), features_str,
-         data.get('budget', 'N/A'), data.get('requirement', 'N/A'), data.get('contact', 'N/A')]
+         data.get('budget', 'N/A'), data.get('requirement', 'N/A'), data.get('contact', 'message,text')]
     )
 
 def get_leads():
@@ -685,7 +685,7 @@ async def budget_select(call: CallbackQuery, state: FSMContext):
 async def requirement_save(message: Message, state: FSMContext):
     await state.update_data(requirement=message.text)
     await state.set_state(ProjectForm.contact)
-    await message.answer("📞 **Almost Done!**\n\nPlease share your Contact Number or Telegram Username:")
+    await message.answer("📞 **Almost Done!**\n\nPlease share your Contact Number or Telegram Username :")
 
 @dp.message(ProjectForm.contact)
 async def contact_save(message: Message, state: FSMContext):
