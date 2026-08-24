@@ -1025,7 +1025,8 @@ async def add_bot_cmd(message: Message):
         expiry_dt = start_dt + timedelta(days=days)
 
         start_str = start_dt.strftime("%Y-%m-%d %H:%M")
-        expiry_str = expiry_dt.strftime("%Y-%m-%d %H:%M")
+        expiry_dt = expiry_dt.replace(hour=00, minute=00, second=00)
+        expiry_str = expiry_dt.strftime('%Y-%m-%d %H:%M')
 
         add_hosted_bot(target_user_id, bot_name, days, start_str, expiry_str)
 
