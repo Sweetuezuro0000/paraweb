@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from threading import Thread
 from flask import Flask
 from dotenv import load_dotenv
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
@@ -41,15 +42,35 @@ try:
     HAS_TURSO = True
 except ImportError:
     HAS_TURSO = False
-from zoneinfo import ZoneInfo
+
+# ===============================
+# TIMEZONE HELPERS (IST, naive datetimes so they compare cleanly
+# with the naive strings stored in the DB)
+# ===============================
 IST = ZoneInfo("Asia/Kolkata")
 
 def now_ist():
-    return datetime.now(IST)
+    """Current India time, returned as a naive datetime (no tzinfo)
+    so it can be safely compared/subtracted against DB-stored datetimes."""
+    return datetime.now(IST).replace(tzinfo=None)
+
 def calculate_expiry(days):
+    """Expiry always lands on midnight IST, 'days' full days from today.
+    Example: bought on 23rd (any time) for 7 days -> expires 30th, 12:00 AM."""
     today_midnight = now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
-    expiry = today_midnight + timedelta(days=days)
-    return expiry
+    return today_midnight + timedelta(days=days)
+
+def format_remaining(exp_date):
+    """Human readable countdown: '3d 5h 12m 40s remaining' or Expired."""
+    now = now_ist()
+    remaining = exp_date - now
+    if remaining.total_seconds() <= 0:
+        return "🔴 Expired"
+    days = remaining.days
+    hours, rem = divmod(remaining.seconds, 3600)
+    minutes, seconds = divmod(rem, 60)
+    return f"🟢 {days}d {hours}h {minutes}m {seconds}s remaining"
+
 # ===============================
 # 1. CONFIG & FLASK KEEP-ALIVE
 # ===============================
@@ -187,7 +208,7 @@ def save_lead(user_id, data):
     db_execute(
         "INSERT INTO leads (user_id, service, business, features, budget, requirement, contact, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW', 'NORMAL')",
         [user_id, data.get('service', 'N/A'), data.get('business', 'N/A'), features_str,
-         data.get('budget', 'N/A'), data.get('requirement', 'N/A'), data.get('contact', 'message,text')]
+         data.get('budget', 'N/A'), data.get('requirement', 'N/A'), data.get('contact', 'N/A')]
     )
 
 def get_leads():
@@ -376,13 +397,16 @@ def generate_upi_link(amount, note):
     return f"upi://pay?pa={UPI_ID}&pn=Paraweb&am={amount}&cu=INR&tn={safe_note}"
 
 async def send_payment_request(chat_id, order_id, amount, note):
+    """Sends a hosting payment request as a dynamically generated UPI QR code
+    (custom upi:// links are rejected by Telegram as inline URL buttons, so a
+    scannable QR is the reliable way to pass the exact amount)."""
     upi_link = generate_upi_link(amount, note)
     text = (
         f"💳 **Payment Request**\n\n"
         f"Amount: ₹{amount}\n"
         f"UPI ID: `{UPI_ID}`\n\n"
-        f"Pay ₹{amount} by scanning QR or manually entering ID in the UPI app.\n"
-        f"Click on '✅ I Have Paid' after payment."
+        f"Pay ₹{amount} by scanning the QR or manually entering the UPI ID in your UPI app.\n"
+        f"Click '✅ I Have Paid' after payment."
     )
     os.makedirs("qr_codes", exist_ok=True)
     qr_path = f"qr_codes/{order_id}.png"
@@ -399,6 +423,7 @@ async def send_payment_request(chat_id, order_id, amount, note):
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
+
 # ===============================
 # 4. BOT SETUP & KEYBOARDS
 # ===============================
@@ -542,6 +567,11 @@ def plan_keyboard(prefix):
         [InlineKeyboardButton(text="30 Days - ₹59", callback_data=f"{prefix}_30")]
     ])
 
+def refresh_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Refresh", callback_data="hosting_mybots")]
+    ])
+
 async def typing(message):
     try:
         await bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -578,8 +608,7 @@ async def show_user_hosted_bots(user_id, send_func):
         # b: (id, user_id, bot_name, days, start_date, expiry_date, status, reminder_1day_sent, reminder_2hr_sent)
         try:
             exp_date = datetime.strptime(b[5], "%Y-%m-%d %H:%M")
-            rem_days = (exp_date - now_ist()).days
-            status_str = f"🟢 Active ({rem_days} Days Remaining)" if (rem_days >= 0 and b[6] == "ACTIVE") else "🔴 Expired"
+            status_str = format_remaining(exp_date) if b[6] == "ACTIVE" else "🔴 Expired"
         except Exception:
             status_str = "🟢 Active"
 
@@ -588,7 +617,7 @@ async def show_user_hosted_bots(user_id, send_func):
         text += f"📌 **Status:** {status_str}\n"
         text += "----------------------------------\n"
 
-    await send_func(text, parse_mode="Markdown")
+    await send_func(text, parse_mode="Markdown", reply_markup=refresh_keyboard())
 
 # ===============================
 # 5. FLOW & USER HANDLERS
@@ -683,13 +712,20 @@ async def budget_select(call: CallbackQuery, state: FSMContext):
 
 @dp.message(ProjectForm.requirement)
 async def requirement_save(message: Message, state: FSMContext):
-    await state.update_data(requirement=message.text)
+    await state.update_data(requirement=message.text or message.caption or "N/A")
     await state.set_state(ProjectForm.contact)
-    await message.answer("📞 **Almost Done!**\n\nPlease share your Contact Number or Telegram Username :")
+    await message.answer("📞 **Almost Done!**\n\nPlease share your Contact Number or Telegram Username:")
 
 @dp.message(ProjectForm.contact)
 async def contact_save(message: Message, state: FSMContext):
-    await state.update_data(contact=message.text)
+    # Accept anything here — @username, a single word, digits, or a shared contact card.
+    contact_value = message.text or message.caption
+    if not contact_value and message.contact:
+        contact_value = message.contact.phone_number
+    if not contact_value:
+        contact_value = "N/A"
+
+    await state.update_data(contact=contact_value)
     data = await state.get_data()
 
     summary = f"""
@@ -785,7 +821,7 @@ async def hosting_new_start(call: CallbackQuery, state: FSMContext):
 
 @dp.message(HostingForm.new_bot_name)
 async def hosting_new_name(message: Message, state: FSMContext):
-    await state.update_data(bot_name=message.text)
+    await state.update_data(bot_name=message.text or "MyBot")
     await state.clear()
     await message.answer("💰 Plan chuno:", reply_markup=plan_keyboard("newplan"))
 
@@ -884,7 +920,7 @@ async def hosting_approve(call: CallbackQuery):
 
     if order_type == "NEW":
         start_dt = now_ist()
-        expiry_dt = start_dt + timedelta(days=plan_days)
+        expiry_dt = calculate_expiry(plan_days)
         add_hosted_bot(user_id, bot_name, plan_days, start_dt.strftime("%Y-%m-%d %H:%M"), expiry_dt.strftime("%Y-%m-%d %H:%M"))
         user_text = f"🎉 **Hosting Activated!**\n\n🤖 Bot: {bot_name}\n⏳ Valid: {plan_days} Days\n📅 Expiry: {expiry_dt.strftime('%Y-%m-%d %H:%M')}"
     else:
@@ -1022,11 +1058,10 @@ async def add_bot_cmd(message: Message):
         days = int(args[2])
 
         start_dt = now_ist()
-        expiry_dt = start_dt + timedelta(days=days)
+        expiry_dt = calculate_expiry(days)
 
         start_str = start_dt.strftime("%Y-%m-%d %H:%M")
-        expiry_dt = expiry_dt.replace(hour=00, minute=00, second=00)
-        expiry_str = expiry_dt.strftime('%Y-%m-%d %H:%M')
+        expiry_str = expiry_dt.strftime("%Y-%m-%d %H:%M")
 
         add_hosted_bot(target_user_id, bot_name, days, start_str, expiry_str)
 
@@ -1094,15 +1129,13 @@ async def all_bots_cmd(event: Message | CallbackQuery):
     for b in bots:
         try:
             exp_date = datetime.strptime(b[5], "%Y-%m-%d %H:%M")
-            rem_days = (exp_date - now_ist()).days
-            status_emoji = "🟢" if (rem_days >= 0 and b[6] == "ACTIVE") else "🔴"
+            remaining_str = format_remaining(exp_date) if b[6] == "ACTIVE" else "🔴 Expired"
         except Exception:
-            rem_days = 0
-            status_emoji = "🟡"
+            remaining_str = "🟡 Unknown"
 
         text += f"🆔 **ID:** `{b[0]}` | User: `{b[1]}`\n"
         text += f"🤖 Bot: **{b[2]}**\n"
-        text += f"⏳ Status: {status_emoji} `{rem_days} days left` (Expires: {b[5]})\n"
+        text += f"⏳ {remaining_str} (Expires: {b[5]})\n"
         text += "----------------------------------\n"
 
     await target_msg.answer(text, parse_mode="Markdown")
